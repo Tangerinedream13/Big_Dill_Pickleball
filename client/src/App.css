@@ -1,18 +1,46 @@
-.app-container {
+/* Global styles */
+body {
+  background-color: #f8fafc; /* soft light gray */
+  color: #222; /* always dark text regardless of OS dark mode */
+  font-family: "Inter", system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Navigation */
+nav {
   text-align: center;
+  margin: 1.5rem 0;
+}
+
+nav a {
+  text-decoration: none;
+  color: #1e3a8a;
+  font-weight: 600;
+  margin: 0 1rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: color 0.3s ease, background 0.3s ease;
+}
+
+nav a:hover {
+  color: #fff;
+  background: #3b82f6;
+}
+
+/* Shared page container */
+.container,
+.app-container {
+  background: white;
+  max-width: 900px;
+  margin: 2rem auto;
   padding: 2rem;
-  font-family: system-ui, sans-serif;
-  background-color: #f8fafc;
-  color: #222;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
 }
 
-.button-row {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
-  margin-top: 2rem;
-}
-
+/* Buttons */
 button {
   padding: 0.75rem 1.25rem;
   background: #60a5fa;
@@ -21,13 +49,15 @@ button {
   border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.3s;
+  transition: background 0.3s, transform 0.2s;
 }
 
 button:hover {
   background: #3b82f6;
+  transform: translateY(-1px);
 }
 
+/* Players Page */
 .players-page {
   text-align: center;
   padding: 2rem;
@@ -46,6 +76,7 @@ button:hover {
   border: 1px solid #ccc;
 }
 
+/* Player List */
 .player-list {
   list-style: none;
   padding: 0;
@@ -55,14 +86,18 @@ button:hover {
   margin: 0.25rem 0;
 }
 
+/* Error message */
 .error {
   color: red;
+  font-weight: 600;
 }
 
+/* Match Schedule Table */
 .schedule-table {
-  width: 80%;
+  width: 90%;
   margin: 1.5rem auto;
   border-collapse: collapse;
+  font-size: 1rem;
 }
 
 .schedule-table th,
@@ -70,40 +105,60 @@ button:hover {
   border: 1px solid #ccc;
   padding: 0.75rem;
   text-align: center;
+  color: #222 !important; /* force dark text */
 }
 
 .schedule-table th {
   background-color: #f0f0f0;
+  font-weight: 700;
 }
 
-/* Add smooth transitions for navigation and buttons */
-body {
-  transition: background-color 0.3s ease, color 0.3s ease;
+/* Zebra striping */
+.schedule-table tr:nth-child(even) {
+  background-color: #f9fafb;
 }
 
-/* Give pages a soft card look */
-.container {
-  background: white;
-  max-width: 900px;
-  margin: 2rem auto;
-  padding: 2rem;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+/* Row hover effects */
+.schedule-table tr:hover {
+  background-color: #e0f2fe;
+  transition: background 0.2s ease-in-out;
 }
 
-/* For the Match Schedule page header */
+/* Headings */
 h2 {
   margin-bottom: 1rem;
   color: #1e3a8a;
 }
 
-/* Zebra stripes for better table readability */
-.schedule-table tr:nth-child(even) {
-  background-color: #f9fafb;
+/* Small secondary button (used for Create Match) */
+.small-button {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s ease;
 }
 
-/* Add hover effect on rows */
-.schedule-table tr:hover {
-  background-color: #e0f2fe;
-  transition: background 0.2s ease-in-out;
+.small-button:hover {
+  background: #2563eb;
+}
+
+/* Smaller submit button for forms */
+.form-submit {
+  padding: 0.45rem 1rem;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.form-submit:hover {
+  background-color: #2563eb;
 }

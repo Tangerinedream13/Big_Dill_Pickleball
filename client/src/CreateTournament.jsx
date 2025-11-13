@@ -22,7 +22,12 @@ function CreateTournament() {
       });
       if (res.ok) {
         alert("Tournament created!");
-        setFormData({ name: "", date: "", location: "", format: "round robin" });
+        setFormData({
+          name: "",
+          date: "",
+          location: "",
+          format: "round robin",
+        });
       } else {
         alert("Error creating tournament");
       }
@@ -37,15 +42,31 @@ function CreateTournament() {
       <form onSubmit={handleSubmit}>
         <label>
           Name:
-          <input name="name" value={formData.name} onChange={handleChange} required />
+          <input
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            required
+          />
         </label>
         <label>
           Date:
-          <input type="date" name="date" value={formData.date} onChange={handleChange} required />
+          <input
+            type="date"
+            name="date"
+            value={formData.date}
+            onChange={handleChange}
+            required
+          />
         </label>
         <label>
           Location:
-          <input name="location" value={formData.location} onChange={handleChange} required />
+          <input
+            name="location"
+            value={formData.location}
+            onChange={handleChange}
+            required
+          />
         </label>
         <label>
           Format:
@@ -54,7 +75,9 @@ function CreateTournament() {
             <option value="single elimination">Single Elimination</option>
           </select>
         </label>
-        <button type="submit">Create</button>
+        <button type="submit" className="form-submit">
+          Create
+        </button>
       </form>
     </div>
   );

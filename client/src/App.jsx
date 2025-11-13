@@ -16,10 +16,11 @@ function App() {
   return (
     <div className="app-container">
       <h1>Big Dill Pickleball</h1>
-      <p>{message}</p>
 
       <div className="button-row">
-        <button onClick={() => navigate("/tournaments/new")}>Add Tournament</button>
+        <button onClick={() => navigate("/tournaments/new")}>
+          Add Tournament
+        </button>
         <button onClick={() => navigate("/players")}>View Players</button>
         <button onClick={() => navigate("/matches")}>Match Schedule</button>
       </div>

@@ -5,6 +5,7 @@ import App from "./App.jsx";
 import PlayersPage from "./PlayersPage.jsx";
 import "./index.css";
 import CreateTournament from "./CreateTournament.jsx";
+import MatchSchedule from "./MatchSchedule.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -18,6 +19,7 @@ createRoot(document.getElementById("root")).render(
   <Route path="/" element={<App />} />
     <Route path="/players" element={<PlayersPage />} />
     <Route path="/tournaments/new" element={<CreateTournament />} />
+    <Route path="/matches" element={<MatchSchedule />} />
   </Routes>
     </BrowserRouter>
   </StrictMode>

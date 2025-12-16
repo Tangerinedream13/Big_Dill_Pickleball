@@ -6,21 +6,27 @@ import PlayersPage from "./PlayersPage.jsx";
 import "./index.css";
 import CreateTournament from "./CreateTournament.jsx";
 import MatchSchedule from "./MatchSchedule.jsx";
+import BracketPage from "./pages/BracketPage";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>
-    <nav style={{ textAlign: "center", margin: "1rem" }}>
-      <Link to="/" style={{ marginRight: "1rem" }}>Home</Link>
-      <Link to="/players" style={{ marginRight: "1rem" }}>Players</Link>
-      <Link to="/tournaments/new">Create Tournament</Link>
-    </nav>
-    <Routes>
-  <Route path="/" element={<App />} />
-    <Route path="/players" element={<PlayersPage />} />
-    <Route path="/tournaments/new" element={<CreateTournament />} />
-    <Route path="/matches" element={<MatchSchedule />} />
-  </Routes>
+      <nav style={{ textAlign: "center", margin: "1rem" }}>
+        <Link to="/" style={{ marginRight: "1rem" }}>
+          Home
+        </Link>
+        <Link to="/players" style={{ marginRight: "1rem" }}>
+          Players
+        </Link>
+        <Link to="/tournaments/new">Create Tournament</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/players" element={<PlayersPage />} />
+        <Route path="/tournaments/new" element={<CreateTournament />} />
+        <Route path="/matches" element={<MatchSchedule />} />
+        <Route path="/bracket" element={<BracketPage />} />
+      </Routes>
     </BrowserRouter>
   </StrictMode>
 );

@@ -4,26 +4,26 @@ const express = require("express");
 const pool = require("./db");
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
 
 process.on("unhandledRejection", (reason) => {
-  console.error("UNHANDLED PROMISE REJECTION 👉", reason);
+  console.error("UNHANDLED PROMISE REJECTION:", reason);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION 👉", err);
+  console.error("UNCAUGHT EXCEPTION:", err);
 });
 
 // ------------------ API ROUTES ------------------
 
-// Test message route (works)
+// Test message route
 app.get("/api/message", (req, res) => {
   res.json({ text: "Hello from the Big Dill Pickleball backend!" });
 });
 
-// ---- GET /api/players (from PostgreSQL) ----
+// ---- GET /api/players ----
 app.get("/api/players", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM players ORDER BY id;");
@@ -34,7 +34,7 @@ app.get("/api/players", async (req, res) => {
   }
 });
 
-// ---- POST /api/players (insert into PostgreSQL) ----
+// ---- POST /api/players ----
 app.post("/api/players", async (req, res) => {
   const { name, skill } = req.body;
 
@@ -48,16 +48,16 @@ app.post("/api/players", async (req, res) => {
       [name, skill]
     );
 
-    res.status(201).json(result.rows[0]); // return new row
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("Error adding player:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
 
-// ---- GET /api/matches (still mock data for now) ----
+// ---- GET /api/matches (mock data) ----
 app.get("/api/matches", (req, res) => {
-  const mockMatches = [
+  res.json([
     {
       teamA: "Team 1",
       teamB: "Team 2",
@@ -72,11 +72,10 @@ app.get("/api/matches", (req, res) => {
       time: "11:00 AM",
       court: "Court 2",
     },
-  ];
-  res.json(mockMatches);
+  ]);
 });
 
 // ------------------ START SERVER ------------------
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

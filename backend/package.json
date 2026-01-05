@@ -1,16 +1,12 @@
 {
   "name": "big_dill_pickleball",
   "version": "1.0.0",
-  "description": "",
   "main": "server.js",
   "scripts": {
+    "build": "cd ../client && npm install && npm run build",
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "build": "npm --prefix ../client ci && npm --prefix ../client run build"
+    "dev": "nodemon server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.1.0",

@@ -316,8 +316,8 @@ const clientDistPath = path.join(__dirname, "..", "client", "dist");
 if (fs.existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
 
-  // SPA fallback (so refreshes work on /players, /matches, etc.)
-  app.get("*", (req, res) => {
+  // SPA fallback (only for non-API GET routes)
+  app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(clientDistPath, "index.html"));
   });
 }

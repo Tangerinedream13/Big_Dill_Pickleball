@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE } from "./apiBase";
 import {
   Badge,
   Box,
@@ -22,7 +23,7 @@ export default function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("/api/message")
+    fetch(`${API_BASE}/api/message`)
       .then((res) => res.json())
       .then((data) => {
         setMessage(data.text ?? "Connected");

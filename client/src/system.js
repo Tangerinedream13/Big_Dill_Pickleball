@@ -37,12 +37,10 @@ const system = createSystem(defaultConfig, {
 
       fonts: {
         heading: {
-          value:
-            "'Inter', system-ui, -apple-system, Segoe UI, sans-serif",
+          value: "'Inter', system-ui, -apple-system, Segoe UI, sans-serif",
         },
         body: {
-          value:
-            "'Inter', system-ui, -apple-system, Segoe UI, sans-serif",
+          value: "'Inter', system-ui, -apple-system, Segoe UI, sans-serif",
         },
       },
     },
@@ -60,8 +58,7 @@ const system = createSystem(defaultConfig, {
           hover: { value: "{colors.club.800}" },
         },
         highlight: {
-          value: "{colors.pickle.500}",
-        },
+          value: "{colors.pickle.500}" },
       },
     },
   },

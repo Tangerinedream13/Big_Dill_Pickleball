@@ -1,12 +1,5 @@
 [build]
-builder = "nixpacks"
-
-[phases.build]
-cmds = [
-  "npm ci",
-  "npm --prefix client ci",
-  "npm --prefix client run build"
-]
+builder = "NIXPACKS"
 
 [deploy]
-startCommand = "node backend/server.js"
+startCommand = "npm start"

@@ -1,0 +1,1 @@
+alter table players add column dupr_rating numeric(3,2);

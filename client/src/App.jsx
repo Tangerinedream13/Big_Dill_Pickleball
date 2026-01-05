@@ -130,8 +130,8 @@ export default function App() {
                   opacity={0.9}
                   maxW="60ch"
                 >
-                  Tournament management with a modern club vibe — round robin,
-                  playoffs, brackets, standings, and score entry.
+                  Tournament management for pickleball - round robin, playoffs,
+                  brackets, standings, and score entry.
                 </Text>
 
                 {/* Primary actions */}
@@ -159,14 +159,20 @@ export default function App() {
                     </HStack>
                   </Button>
 
-                  <Button variant="outline" onClick={() => navigate("/matches")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/matches")}
+                  >
                     <HStack gap={2}>
                       <CalendarDays size={18} />
                       <span>Match Schedule</span>
                     </HStack>
                   </Button>
 
-                  <Button variant="outline" onClick={() => navigate("/players")}>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/players")}
+                  >
                     <HStack gap={2}>
                       <Users size={18} />
                       <span>Players</span>

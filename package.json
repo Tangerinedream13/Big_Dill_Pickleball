@@ -1,8 +1,8 @@
 {
-  "dependencies": {
-    "@chakra-ui/react": "^3.30.0",
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "framer-motion": "^12.23.26"
+    "name": "big-dill-root",
+    "private": true,
+    "scripts": {
+      "start": "cd client && npm start",
+      "build": "cd client && npm ci && npm run build"
+    }
   }
-}

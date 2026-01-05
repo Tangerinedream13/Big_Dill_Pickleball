@@ -1,4 +1,4 @@
-// server.js
+// backend/server.js
 console.log("TOP OF SERVER.JS");
 
 require("dotenv").config();
@@ -13,7 +13,11 @@ console.log("✅ after db");
 const engine = require("./tournamentEngine");
 console.log("✅ after engine");
 
+const path = require("path");
+
 const app = express();
+
+// ✅ Railway-friendly port (Railway sets PORT, often 8080)
 const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
@@ -28,56 +32,20 @@ process.on("uncaughtException", (err) => {
   console.error("UNCAUGHT EXCEPTION:", err);
 });
 
+// ------------------ HEALTH ------------------
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
 // ------------------ HELPERS (DB) ------------------
 async function getDefaultTournamentId() {
-  const r = await pool.query("select id from tournaments order by id asc limit 1;");
-  if (r.rowCount === 0) throw new Error("No tournaments found. Seed one first.");
+  const r = await pool.query(
+    "select id from tournaments order by id asc limit 1;"
+  );
+  if (r.rowCount === 0)
+    throw new Error("No tournaments found. Seed one first.");
   return r.rows[0].id;
 }
-
-// ------------------ TOURNAMENTS (DB-BACKED) ------------------
-
-// GET /api/tournaments
-app.get("/api/tournaments", async (req, res) => {
-  try {
-    const r = await pool.query(
-      `
-      select id, name
-      from tournaments
-      order by id desc;
-      `
-    );
-    res.json(r.rows);
-  } catch (err) {
-    console.error("GET /api/tournaments error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/tournaments
-// Body: { name }
-// Creates a tournament row and returns it.
-// (Optional next step: auto-create teams + tournament_teams associations.)
-app.post("/api/tournaments", async (req, res) => {
-  try {
-    const name = (req.body.name ?? "").toString().trim();
-    if (!name) return res.status(400).json({ error: "Name is required." });
-
-    const inserted = await pool.query(
-      `
-      insert into tournaments (name)
-      values ($1)
-      returning id, name;
-      `,
-      [name]
-    );
-
-    res.status(201).json(inserted.rows[0]);
-  } catch (err) {
-    console.error("POST /api/tournaments error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 async function getTeamsForTournament(tournamentId) {
   const r = await pool.query(
@@ -120,8 +88,9 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     [tournamentId, phases]
   );
 
+  // engine expects `id`
   return r.rows.map((m) => ({
-    id: m.code, // engine expects `id`
+    id: m.code,
     phase: m.phase,
     teamAId: m.teamAId,
     teamBId: m.teamBId,
@@ -131,7 +100,7 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
   }));
 }
 
-// ------------------ PLAYERS HELPERS (supports both schemas) ------------------
+// ------------------ PLAYERS HELPERS ------------------
 function parseDupr(v) {
   if (v === null || v === undefined || v === "") return null;
   const num = Number(v);
@@ -148,12 +117,16 @@ function duprLabel(dupr) {
 }
 
 // If players.tournament_id does not exist, Postgres throws 42703 (undefined_column).
-async function queryPlayersScoped(sqlWithTournament, paramsWithTournament, sqlWithoutTournament, paramsWithoutTournament) {
+async function queryPlayersScoped(
+  sqlWithTournament,
+  paramsWithTournament,
+  sqlWithoutTournament,
+  paramsWithoutTournament
+) {
   try {
     return await pool.query(sqlWithTournament, paramsWithTournament);
   } catch (err) {
     if (err && err.code === "42703") {
-      // column tournament_id does not exist -> fallback
       return await pool.query(sqlWithoutTournament, paramsWithoutTournament);
     }
     throw err;
@@ -167,17 +140,66 @@ app.get("/api/message", (req, res) => {
   res.json({ text: "Hello from the Big Dill Pickleball backend!" });
 });
 
+// ------------------ TOURNAMENTS (DB-BACKED) ------------------
+
+// GET /api/tournaments
+app.get("/api/tournaments", async (req, res) => {
+  try {
+    const r = await pool.query(
+      `
+      select id, name
+      from tournaments
+      order by id desc;
+      `
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error("GET /api/tournaments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tournaments
+app.post("/api/tournaments", async (req, res) => {
+  try {
+    const name = (req.body.name ?? "").toString().trim();
+    if (!name) return res.status(400).json({ error: "Name is required." });
+
+    const inserted = await pool.query(
+      `
+      insert into tournaments (name)
+      values ($1)
+      returning id, name;
+      `,
+      [name]
+    );
+
+    res.status(201).json(inserted.rows[0]);
+  } catch (err) {
+    console.error("POST /api/tournaments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ------------------ TOURNAMENT STATE (DB-BACKED) ------------------
 app.get("/api/tournament/state", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-    const finals = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+    const finals = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
 
-    const standings = engine.computeStandings(teams.map((t) => t.id), rrMatches);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
 
     res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
   } catch (err) {
@@ -186,11 +208,13 @@ app.get("/api/tournament/state", async (req, res) => {
   }
 });
 
-// DB-backed reset: wipes all matches for the default tournament
+// Reset tournament matches
 app.post("/api/tournament/reset", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
-    await pool.query(`delete from matches where tournament_id = $1;`, [tournamentId]);
+    await pool.query(`delete from matches where tournament_id = $1;`, [
+      tournamentId,
+    ]);
     res.json({ ok: true, tournamentId });
   } catch (err) {
     console.error("Reset error:", err);
@@ -198,19 +222,27 @@ app.post("/api/tournament/reset", async (req, res) => {
   }
 });
 
-// ------------------ ROUND ROBIN (DB-BACKED) ------------------
+// ------------------ ROUND ROBIN ------------------
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
     const teams = await getTeamsForTournament(tournamentId);
 
     const gamesPerTeamRaw = req.body?.gamesPerTeam;
-    const gamesPerTeam = Number.isFinite(Number(gamesPerTeamRaw)) ? Number(gamesPerTeamRaw) : 4;
+    const gamesPerTeam = Number.isFinite(Number(gamesPerTeamRaw))
+      ? Number(gamesPerTeamRaw)
+      : 4;
 
     const rrMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
 
-    await pool.query(`delete from matches where tournament_id = $1 and phase = 'RR';`, [tournamentId]);
-    await pool.query(`delete from matches where tournament_id = $1 and phase in ('SF','FINAL','THIRD');`, [tournamentId]);
+    await pool.query(
+      `delete from matches where tournament_id = $1 and phase = 'RR';`,
+      [tournamentId]
+    );
+    await pool.query(
+      `delete from matches where tournament_id = $1 and phase in ('SF','FINAL','THIRD');`,
+      [tournamentId]
+    );
 
     if (rrMatches.length > 0) {
       const params = [];
@@ -239,7 +271,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 });
 
 app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
-  const { id } = req.params; // e.g., "RR-1"
+  const { id } = req.params;
   const { scoreA, scoreB } = req.body;
 
   try {
@@ -261,7 +293,9 @@ app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (matchRes.rowCount === 0) return res.status(404).json({ error: `RR match not found: ${id}` });
+    if (matchRes.rowCount === 0) {
+      return res.status(404).json({ error: `RR match not found: ${id}` });
+    }
 
     const matchRow = matchRes.rows[0];
     const winnerId = scoreA > scoreB ? matchRow.teamAId : matchRow.teamBId;
@@ -284,8 +318,13 @@ app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
     );
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
-    const standings = engine.computeStandings(teams.map((t) => t.id), rrMatches);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
 
     res.json({ match: updated.rows[0], standings });
   } catch (err) {
@@ -294,18 +333,23 @@ app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
   }
 });
 
-// ------------------ PLAYOFFS (DB-BACKED) ------------------
+// ------------------ PLAYOFFS ------------------
 app.post("/api/playoffs/generate", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
-
     const teams = await getTeamsForTournament(tournamentId);
     const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
 
-    const standings = engine.computeStandings(teams.map((t) => t.id), rrMatches);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
     const semis = engine.generatePlayoffsFromStandings(standings);
 
-    await pool.query(`delete from matches where tournament_id = $1 and phase = 'SF';`, [tournamentId]);
+    await pool.query(
+      `delete from matches where tournament_id = $1 and phase = 'SF';`,
+      [tournamentId]
+    );
 
     if (semis.length > 0) {
       const params = [];
@@ -334,7 +378,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
 });
 
 app.post("/api/playoffs/semis/:id/score", async (req, res) => {
-  const { id } = req.params; // "SF1" or "SF2"
+  const { id } = req.params;
   const { scoreA, scoreB } = req.body;
 
   try {
@@ -356,7 +400,9 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (sfRes.rowCount === 0) return res.status(404).json({ error: `SF match not found: ${id}` });
+    if (sfRes.rowCount === 0) {
+      return res.status(404).json({ error: `SF match not found: ${id}` });
+    }
 
     const sf = sfRes.rows[0];
     const winnerId = scoreA > scoreB ? sf.teamAId : sf.teamBId;
@@ -375,7 +421,6 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     const sf2Done = semis.find((m) => m.id === "SF2")?.winnerId;
 
     if (sf1Done && sf2Done) {
-      // ✅ 409 guard: don't allow changing semis if finals already scored
       const finalsScoredRes = await pool.query(
         `
         select 1
@@ -428,7 +473,10 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     }
 
     const semisOut = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-    const finalsOut = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+    const finalsOut = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
 
     res.json({ semis: semisOut, finals: finalsOut, tournamentId });
   } catch (err) {
@@ -438,7 +486,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
 });
 
 app.post("/api/playoffs/finals/:id/score", async (req, res) => {
-  const { id } = req.params; // "FINAL" or "THIRD"
+  const { id } = req.params;
   const { scoreA, scoreB } = req.body;
 
   try {
@@ -460,7 +508,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (mRes.rowCount === 0) return res.status(404).json({ error: `Finals match not found: ${id}` });
+    if (mRes.rowCount === 0) {
+      return res.status(404).json({ error: `Finals match not found: ${id}` });
+    }
 
     const m = mRes.rows[0];
     const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
@@ -482,7 +532,11 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       [scoreA, scoreB, winnerId, tournamentId, id]
     );
 
-    const finals = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+    const finals = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
+
     res.json({ match: updated.rows[0], finals, tournamentId });
   } catch (err) {
     console.error("Finals score error:", err);
@@ -491,7 +545,6 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
 });
 
 // ------------------ PLAYERS (DB-BACKED, DUPR) ------------------
-// Search ONLY by name OR DUPR. No "level" / no "skill".
 app.get("/api/players", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
@@ -548,9 +601,12 @@ app.post("/api/players", async (req, res) => {
     const dupr = parseDupr(req.body.duprRating);
 
     if (!name) return res.status(400).json({ error: "Name is required." });
-    if (Number.isNaN(dupr)) return res.status(400).json({ error: "DUPR must be a number." });
+    if (Number.isNaN(dupr))
+      return res.status(400).json({ error: "DUPR must be a number." });
     if (dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res.status(400).json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+      return res.status(400).json({
+        error: "DUPR must be between 2.00 and 6.99 (or blank).",
+      });
     }
 
     const withT = `
@@ -583,43 +639,32 @@ app.patch("/api/players/:id", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid player id." });
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "Invalid player id." });
 
     const name =
-      req.body.name === undefined ? undefined : (req.body.name ?? "").toString().trim();
+      req.body.name === undefined
+        ? undefined
+        : (req.body.name ?? "").toString().trim();
     const dupr =
-      req.body.duprRating === undefined ? undefined : parseDupr(req.body.duprRating);
+      req.body.duprRating === undefined
+        ? undefined
+        : parseDupr(req.body.duprRating);
 
-    if (name !== undefined && !name) return res.status(400).json({ error: "Name cannot be empty." });
-    if (dupr !== undefined && Number.isNaN(dupr)) return res.status(400).json({ error: "DUPR must be a number." });
+    if (name !== undefined && !name)
+      return res.status(400).json({ error: "Name cannot be empty." });
+    if (dupr !== undefined && Number.isNaN(dupr))
+      return res.status(400).json({ error: "DUPR must be a number." });
     if (dupr !== undefined && dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res.status(400).json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+      return res.status(400).json({
+        error: "DUPR must be between 2.00 and 6.99 (or blank).",
+      });
     }
 
-    const withT = `
-      update players
-      set
-        name = coalesce($1, name),
-        dupr_rating = $2
-      where tournament_id = $3 and id = $4
-      returning id, name, dupr_rating as "duprRating";
-    `;
-    const withoutT = `
-      update players
-      set
-        name = coalesce($1, name),
-        dupr_rating = $2
-      where id = $3
-      returning id, name, dupr_rating as "duprRating";
-    `;
-
-    // If dupr is not provided, keep current value by passing null? -> we don't want that.
-    // So: pass current value by using "dupr_rating = coalesce($2, dupr_rating)" only if undefined.
-    // We’ll do it by rewriting params:
     const duprParam = dupr === undefined ? null : dupr;
     const nameParam = name === undefined ? null : name;
 
-    const withT2 = `
+    const withT = `
       update players
       set
         name = coalesce($1, name),
@@ -627,7 +672,7 @@ app.patch("/api/players/:id", async (req, res) => {
       where tournament_id = $3 and id = $4
       returning id, name, dupr_rating as "duprRating";
     `;
-    const withoutT2 = `
+    const withoutT = `
       update players
       set
         name = coalesce($1, name),
@@ -637,13 +682,14 @@ app.patch("/api/players/:id", async (req, res) => {
     `;
 
     const updated = await queryPlayersScoped(
-      withT2,
+      withT,
       [nameParam, duprParam, tournamentId, id],
-      withoutT2,
+      withoutT,
       [nameParam, duprParam, id]
     );
 
-    if (updated.rowCount === 0) return res.status(404).json({ error: `Player not found: ${id}` });
+    if (updated.rowCount === 0)
+      return res.status(404).json({ error: `Player not found: ${id}` });
 
     const p = updated.rows[0];
     res.json({ ...p, duprTier: duprLabel(p.duprRating) });
@@ -657,7 +703,8 @@ app.delete("/api/players/:id", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid player id." });
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "Invalid player id." });
 
     const withT = `
       delete from players
@@ -670,9 +717,15 @@ app.delete("/api/players/:id", async (req, res) => {
       returning id;
     `;
 
-    const deleted = await queryPlayersScoped(withT, [tournamentId, id], withoutT, [id]);
+    const deleted = await queryPlayersScoped(
+      withT,
+      [tournamentId, id],
+      withoutT,
+      [id]
+    );
 
-    if (deleted.rowCount === 0) return res.status(404).json({ error: `Player not found: ${id}` });
+    if (deleted.rowCount === 0)
+      return res.status(404).json({ error: `Player not found: ${id}` });
 
     res.json({ ok: true, id });
   } catch (err) {
@@ -681,17 +734,27 @@ app.delete("/api/players/:id", async (req, res) => {
   }
 });
 
-// ------------------ (OPTIONAL) /api/matches mock route ------------------
-// If you still use this anywhere in the UI, keep it. Otherwise you can delete it safely.
+// ------------------ OPTIONAL: /api/matches mock ------------------
 app.get("/api/matches", (req, res) => {
   res.json([
-    { teamA: "Team 1", teamB: "Team 2", date: "2025-11-15", time: "10:00 AM", court: "Court 1" },
-    { teamA: "Team 3", teamB: "Team 4", date: "2025-11-15", time: "11:00 AM", court: "Court 2" },
+    {
+      teamA: "Team 1",
+      teamB: "Team 2",
+      date: "2025-11-15",
+      time: "10:00 AM",
+      court: "Court 1",
+    },
+    {
+      teamA: "Team 3",
+      teamB: "Team 4",
+      date: "2025-11-15",
+      time: "11:00 AM",
+      court: "Court 2",
+    },
   ]);
 });
 
-const path = require("path");
-
+// ------------------ STATIC CLIENT (PRODUCTION) ------------------
 if (process.env.NODE_ENV === "production") {
   const clientDistPath = path.join(__dirname, "..", "client", "dist");
   app.use(express.static(clientDistPath));
@@ -702,7 +765,7 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-// ------------------ START SERVER ------------------
+// ------------------ START SERVER (Railway-safe) ------------------
 console.log("✅ about to listen on port", PORT);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);

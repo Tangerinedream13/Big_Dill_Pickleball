@@ -690,6 +690,18 @@ app.get("/api/matches", (req, res) => {
   ]);
 });
 
+const path = require("path");
+
+if (process.env.NODE_ENV === "production") {
+  const clientDistPath = path.join(__dirname, "..", "client", "dist");
+  app.use(express.static(clientDistPath));
+
+  // SPA fallback (so refreshes work on /players, /matches, etc.)
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(clientDistPath, "index.html"));
+  });
+}
+
 // ------------------ START SERVER ------------------
 console.log("✅ about to listen on port", PORT);
 app.listen(PORT, "0.0.0.0", () => {

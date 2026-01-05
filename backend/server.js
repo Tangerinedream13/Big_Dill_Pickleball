@@ -35,6 +35,50 @@ async function getDefaultTournamentId() {
   return r.rows[0].id;
 }
 
+// ------------------ TOURNAMENTS (DB-BACKED) ------------------
+
+// GET /api/tournaments
+app.get("/api/tournaments", async (req, res) => {
+  try {
+    const r = await pool.query(
+      `
+      select id, name
+      from tournaments
+      order by id desc;
+      `
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error("GET /api/tournaments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/tournaments
+// Body: { name }
+// Creates a tournament row and returns it.
+// (Optional next step: auto-create teams + tournament_teams associations.)
+app.post("/api/tournaments", async (req, res) => {
+  try {
+    const name = (req.body.name ?? "").toString().trim();
+    if (!name) return res.status(400).json({ error: "Name is required." });
+
+    const inserted = await pool.query(
+      `
+      insert into tournaments (name)
+      values ($1)
+      returning id, name;
+      `,
+      [name]
+    );
+
+    res.status(201).json(inserted.rows[0]);
+  } catch (err) {
+    console.error("POST /api/tournaments error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 async function getTeamsForTournament(tournamentId) {
   const r = await pool.query(
     `

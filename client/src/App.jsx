@@ -16,22 +16,12 @@ import {
   Select,
   createListCollection,
 } from "@chakra-ui/react";
-import {
-  Trophy,
-  Users,
-  CalendarDays,
-  Plus,
-  LogIn,
-  UserPlus,
-} from "lucide-react";
+import { Trophy, Users, CalendarDays, Plus, LogIn, UserPlus } from "lucide-react";
 
 import heroImg from "./assets/pickleball-hero.jpg";
-import {
-  setCurrentTournamentId,
-  getCurrentTournamentId,
-} from "./tournamentStore";
+import { setCurrentTournamentId, getCurrentTournamentId } from "./tournamentStore";
 
-// ✅ IMPORTANT: these must be OUTSIDE App() so they don't remount on every keystroke
+// ✅ IMPORTANT: keep these OUTSIDE App() so they don't remount on every keystroke
 function Surface({ children, ...props }) {
   return (
     <Box
@@ -47,9 +37,9 @@ function Surface({ children, ...props }) {
   );
 }
 
-function ActionTile({ icon, title, desc, cta, onClick }) {
+function ActionTile({ icon, title, desc, cta, onClick, disabled = false }) {
   return (
-    <Surface p={5}>
+    <Surface p={5} opacity={disabled ? 0.6 : 1}>
       <HStack gap={3} mb={2}>
         <Box
           w="36px"
@@ -70,7 +60,13 @@ function ActionTile({ icon, title, desc, cta, onClick }) {
         {desc}
       </Text>
 
-      <Button w="full" variant="outline" onClick={onClick} type="button">
+      <Button
+        w="full"
+        variant="outline"
+        onClick={onClick}
+        type="button"
+        disabled={disabled}
+      >
         {cta}
       </Button>
     </Surface>
@@ -82,9 +78,7 @@ export default function App() {
 
   // Silent backend ping (no UI)
   useEffect(() => {
-    fetch("/api/message").catch((e) =>
-      console.warn("Backend check failed:", e)
-    );
+    fetch("/api/message").catch((e) => console.warn("Backend check failed:", e));
   }, []);
 
   // ---------------------------
@@ -104,7 +98,9 @@ export default function App() {
   const [joinStatus, setJoinStatus] = useState("idle"); // idle | saving | ok | error
   const [joinError, setJoinError] = useState("");
 
-  const currentTid = getCurrentTournamentId();
+  // Make "selected" reactive to the picker while it's open
+  const currentTid = joinTournamentId || getCurrentTournamentId();
+  const hasTournamentSelected = !!currentTid;
 
   async function loadTournaments() {
     setTournamentsError("");
@@ -147,7 +143,7 @@ export default function App() {
   function setJoinTournamentId(id) {
     const next = String(id || "");
     setJoinTournamentIdState(next);
-    if (next) setCurrentTournamentId(next);
+    if (next) setCurrentTournamentId(next); // persist selection
   }
 
   async function submitJoin(e) {
@@ -163,8 +159,7 @@ export default function App() {
     try {
       if (!tid) throw new Error("Please pick a tournament.");
       if (!name) throw new Error("Name is required.");
-      if (!email || !email.includes("@"))
-        throw new Error("Valid email is required.");
+      if (!email || !email.includes("@")) throw new Error("Valid email is required.");
 
       const res = await fetch(`/api/tournaments/${tid}/signup`, {
         method: "POST",
@@ -215,18 +210,14 @@ export default function App() {
                     Big Dill Pickleball
                   </Heading>
 
-                  {currentTid ? (
+                  {hasTournamentSelected ? (
                     <Badge variant="pickle">Tournament selected</Badge>
                   ) : (
                     <Badge variant="club">No tournament selected</Badge>
                   )}
                 </HStack>
 
-                <Text
-                  fontSize={{ base: "md", md: "lg" }}
-                  opacity={0.9}
-                  maxW="60ch"
-                >
+                <Text fontSize={{ base: "md", md: "lg" }} opacity={0.9} maxW="60ch">
                   Tournament management for pickleball — round robin, playoffs,
                   brackets, standings, and score entry.
                 </Text>
@@ -242,9 +233,7 @@ export default function App() {
                   >
                     <HStack gap={2}>
                       <LogIn size={18} />
-                      <span>
-                        {joinOpen ? "Close Join" : "Join a Tournament"}
-                      </span>
+                      <span>{joinOpen ? "Close Join" : "Join a Tournament"}</span>
                     </HStack>
                   </Button>
 
@@ -289,12 +278,7 @@ export default function App() {
                         </HStack>
 
                         {tournamentsStatus === "error" ? (
-                          <Box
-                            border="1px solid"
-                            borderColor="border"
-                            p={3}
-                            borderRadius="xl"
-                          >
+                          <Box border="1px solid" borderColor="border" p={3} borderRadius="xl">
                             <Text fontWeight="700" mb={1}>
                               Couldn’t load tournaments
                             </Text>
@@ -303,12 +287,7 @@ export default function App() {
                         ) : null}
 
                         {joinError ? (
-                          <Box
-                            border="1px solid"
-                            borderColor="border"
-                            p={3}
-                            borderRadius="xl"
-                          >
+                          <Box border="1px solid" borderColor="border" p={3} borderRadius="xl">
                             <Text fontWeight="700" mb={1}>
                               Couldn’t sign you up
                             </Text>
@@ -329,9 +308,7 @@ export default function App() {
                               setJoinTournamentId(details.value?.[0] ?? "")
                             }
                           >
-                            <Select.Trigger
-                              maxW={{ base: "100%", md: "420px" }}
-                            >
+                            <Select.Trigger maxW={{ base: "100%", md: "420px" }}>
                               <Select.ValueText
                                 placeholder={
                                   tournamentsStatus === "loading"
@@ -363,18 +340,14 @@ export default function App() {
                           </Select.Root>
 
                           <Text fontSize="xs" opacity={0.75}>
-                            Tip: if you created multiple “Winter Classic”
-                            entries while testing, pick the latest ID from the
-                            dropdown.
+                            Tip: if you created multiple “Winter Classic” entries while testing,
+                            pick the latest ID from the dropdown.
                           </Text>
                         </Stack>
 
                         {/* Fields */}
                         <Grid
-                          templateColumns={{
-                            base: "1fr",
-                            md: "repeat(3, 1fr)",
-                          }}
+                          templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }}
                           gap={3}
                         >
                           <Stack gap={2}>
@@ -414,19 +387,11 @@ export default function App() {
                         </Grid>
 
                         <HStack justify="flex-end" gap={2}>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setJoinOpen(false)}
-                          >
+                          <Button type="button" variant="outline" onClick={() => setJoinOpen(false)}>
                             Cancel
                           </Button>
 
-                          <Button
-                            variant="pickle"
-                            type="submit"
-                            disabled={!canJoinSubmit}
-                          >
+                          <Button variant="pickle" type="submit" disabled={!canJoinSubmit}>
                             Sign up
                           </Button>
                         </HStack>
@@ -447,14 +412,7 @@ export default function App() {
                 minH={{ base: "240px", md: "420px" }}
                 position="relative"
               >
-                <Box
-                  as="img"
-                  src={heroImg}
-                  alt="Pickleball club courts"
-                  w="100%"
-                  h="100%"
-                  objectFit="cover"
-                />
+                <Box as="img" src={heroImg} alt="Pickleball club courts" w="100%" h="100%" objectFit="cover" />
                 <Box
                   position="absolute"
                   inset="0"
@@ -482,17 +440,13 @@ export default function App() {
               Quick Actions
             </Heading>
 
-            <Grid
-              templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }}
-              gap={5}
-            >
+            <Grid templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }} gap={5}>
               <ActionTile
                 icon={<Users size={18} />}
                 title="Players"
                 desc="Add and manage player rosters."
                 cta="View Players"
                 onClick={() => navigate("/players")}
-                disabled={false}
               />
               <ActionTile
                 icon={<CalendarDays size={18} />}

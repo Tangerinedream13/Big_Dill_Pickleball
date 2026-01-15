@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Button,
@@ -11,6 +11,8 @@ import {
   Text,
   Input,
 } from "@chakra-ui/react";
+
+import { getCurrentTournamentId } from "../tournamentStore";
 
 function teamNameById(teams, id) {
   return teams.find((t) => t.id === id)?.name ?? `Team ${id}`;
@@ -30,24 +32,48 @@ export default function BracketPage() {
   // quick inline scoring UI
   const [scoreDraft, setScoreDraft] = useState({}); // key: matchId -> {a,b}
 
+  const tid = getCurrentTournamentId();
+
+  function withTid(path) {
+    // Always build from origin so relative paths work consistently
+    const u = new URL(path, window.location.origin);
+    if (tid) u.searchParams.set("tournamentId", tid);
+    return u.pathname + u.search;
+  }
+
   async function fetchState() {
     setError("");
+    setLoading(true);
+
     try {
-      const res = await fetch("/api/tournament/state");
-      const data = await res.json();
-      if (!res.ok)
+      if (!tid) {
+        throw new Error(
+          "No tournament selected. Create a tournament first (or select one)."
+        );
+      }
+
+      const res = await fetch(withTid("/api/tournament/state"));
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
         throw new Error(data?.error || "Failed to load tournament state");
+      }
+
       setState(data);
     } catch (e) {
-      setError(e.message || "Error connecting to backend");
+      setError(e?.message || "Error connecting to backend");
     } finally {
       setLoading(false);
     }
   }
 
+  // Re-fetch when tournament changes
   useEffect(() => {
+    // When switching tournaments, clear score drafts so you don’t carry old inputs over
+    setScoreDraft({});
     fetchState();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tid]);
 
   async function runAction(fn) {
     setError("");
@@ -56,7 +82,7 @@ export default function BracketPage() {
       await fn();
       await fetchState();
     } catch (e) {
-      setError(e.message || "Action failed");
+      setError(e?.message || "Action failed");
       setLoading(false);
     }
   }
@@ -79,30 +105,41 @@ export default function BracketPage() {
     }
 
     await runAction(async () => {
+      if (!tid) throw new Error("No tournament selected.");
+
       if (phase === "RR") {
-        const res = await fetch(`/api/roundrobin/matches/${matchId}/score`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scoreA, scoreB }),
-        });
+        const res = await fetch(
+          withTid(`/api/roundrobin/matches/${matchId}/score`),
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scoreA, scoreB }),
+          }
+        );
         const data = await res.json().catch(() => ({}));
         if (!res.ok)
           throw new Error(data?.error || "Failed to submit RR score");
       } else if (phase === "SF") {
-        const res = await fetch(`/api/playoffs/semis/${matchId}/score`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scoreA, scoreB }),
-        });
+        const res = await fetch(
+          withTid(`/api/playoffs/semis/${matchId}/score`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scoreA, scoreB }),
+          }
+        );
         const data = await res.json().catch(() => ({}));
         if (!res.ok)
           throw new Error(data?.error || "Failed to submit SF score");
       } else {
-        const res = await fetch(`/api/playoffs/finals/${matchId}/score`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scoreA, scoreB }),
-        });
+        const res = await fetch(
+          withTid(`/api/playoffs/finals/${matchId}/score`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scoreA, scoreB }),
+          }
+        );
         const data = await res.json().catch(() => ({}));
         if (!res.ok)
           throw new Error(data?.error || "Failed to submit finals score");
@@ -121,7 +158,9 @@ export default function BracketPage() {
           <Button
             onClick={() =>
               runAction(async () => {
-                const res = await fetch("/api/roundrobin/generate", {
+                if (!tid) throw new Error("No tournament selected.");
+
+                const res = await fetch(withTid("/api/roundrobin/generate"), {
                   method: "POST",
                 });
                 const data = await res.json().catch(() => ({}));
@@ -132,11 +171,14 @@ export default function BracketPage() {
           >
             Generate RR
           </Button>
+
           <Button
             variant="outline"
             onClick={() =>
               runAction(async () => {
-                const res = await fetch("/api/playoffs/generate", {
+                if (!tid) throw new Error("No tournament selected.");
+
+                const res = await fetch(withTid("/api/playoffs/generate"), {
                   method: "POST",
                 });
                 const data = await res.json().catch(() => ({}));
@@ -147,11 +189,14 @@ export default function BracketPage() {
           >
             Generate Playoffs
           </Button>
+
           <Button
             variant="ghost"
             onClick={() =>
               runAction(async () => {
-                const res = await fetch("/api/tournament/reset", {
+                if (!tid) throw new Error("No tournament selected.");
+
+                const res = await fetch(withTid("/api/tournament/reset"), {
                   method: "POST",
                 });
                 const data = await res.json().catch(() => ({}));

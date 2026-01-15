@@ -14,6 +14,7 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { ArrowLeft, PlusCircle, Trophy } from "lucide-react";
+import { setCurrentTournamentId } from "./tournamentStore";
 
 function CreateTournament() {
   const navigate = useNavigate();

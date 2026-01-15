@@ -16,6 +16,7 @@ import {
   Table,
 } from "@chakra-ui/react";
 import { ArrowLeft, Save, Search, CalendarDays } from "lucide-react";
+import { getCurrentTournamentId } from "./tournamentStore";
 
 function labelForPhase(phase) {
   if (phase === "RR") return { label: "Round Robin", variant: "club" };
@@ -41,7 +42,8 @@ function isIntString(v) {
 export default function MatchSchedule() {
   const navigate = useNavigate();
 
-  const [status, setStatus] = useState("loading"); // loading | ok | error
+  // loading | ok | error | no-tournament
+  const [status, setStatus] = useState("loading");
   const [state, setState] = useState(null);
 
   const [phaseFilter, setPhaseFilter] = useState("ALL"); // ALL | RR | SF | FINAL | THIRD
@@ -50,12 +52,33 @@ export default function MatchSchedule() {
   // { [matchId]: { scoreA: string, scoreB: string, saving: boolean, error: string|null } }
   const [edits, setEdits] = useState({});
 
+  const tid = getCurrentTournamentId();
+
+  function withTid(path) {
+    const u = new URL(path, window.location.origin);
+    if (tid) u.searchParams.set("tournamentId", tid);
+    return u.pathname + u.search;
+  }
+
   async function loadState() {
     try {
       setStatus("loading");
-      const res = await fetch("/api/tournament/state");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+
+      if (!tid) {
+        // No selected tournament => not a backend failure
+        setState(null);
+        setEdits({});
+        setStatus("no-tournament");
+        return;
+      }
+
+      const res = await fetch(withTid("/api/tournament/state"));
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
+
       setState(data);
       setStatus("ok");
 
@@ -82,8 +105,12 @@ export default function MatchSchedule() {
   }
 
   useEffect(() => {
+    // When switching tournaments, clear out old UI state immediately
+    setState(null);
+    setEdits({});
     loadState();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tid]);
 
   const teamsById = useMemo(() => {
     const map = new Map();
@@ -116,7 +143,12 @@ export default function MatchSchedule() {
     setEdits((prev) => ({
       ...prev,
       [matchId]: {
-        ...(prev[matchId] ?? { scoreA: "", scoreB: "", saving: false, error: null }),
+        ...(prev[matchId] ?? {
+          scoreA: "",
+          scoreB: "",
+          saving: false,
+          error: null,
+        }),
         [side]: String(value).replace(/[^\d]/g, ""), // digits only
         error: null,
       },
@@ -125,7 +157,10 @@ export default function MatchSchedule() {
 
   function getSaveEndpoint(match) {
     if (match.phase === "RR") {
-      return { method: "PATCH", url: `/api/roundrobin/matches/${match.id}/score` };
+      return {
+        method: "PATCH",
+        url: `/api/roundrobin/matches/${match.id}/score`,
+      };
     }
     if (match.phase === "SF") {
       return { method: "POST", url: `/api/playoffs/semis/${match.id}/score` };
@@ -139,6 +174,14 @@ export default function MatchSchedule() {
   async function saveMatch(match) {
     const matchId = match.id;
     const row = edits[matchId] ?? { scoreA: "", scoreB: "" };
+
+    if (!tid) {
+      setEdits((prev) => ({
+        ...prev,
+        [matchId]: { ...prev[matchId], error: "No tournament selected." },
+      }));
+      return;
+    }
 
     const scoreA = row.scoreA;
     const scoreB = row.scoreB;
@@ -167,10 +210,13 @@ export default function MatchSchedule() {
     }));
 
     try {
-      const res = await fetch(endpoint.url, {
+      const res = await fetch(withTid(endpoint.url), {
         method: endpoint.method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scoreA: Number(scoreA), scoreB: Number(scoreB) }),
+        body: JSON.stringify({
+          scoreA: Number(scoreA),
+          scoreB: Number(scoreB),
+        }),
       });
 
       if (!res.ok) {
@@ -183,7 +229,11 @@ export default function MatchSchedule() {
       console.error(e);
       setEdits((prev) => ({
         ...prev,
-        [matchId]: { ...prev[matchId], saving: false, error: e.message || "Save failed." },
+        [matchId]: {
+          ...prev[matchId],
+          saving: false,
+          error: e.message || "Save failed.",
+        },
       }));
     }
   }
@@ -219,12 +269,18 @@ export default function MatchSchedule() {
                 </Heading>
 
                 {status === "loading" && <Badge variant="club">Loading…</Badge>}
+                {status === "no-tournament" && (
+                  <Badge variant="club">No tournament selected</Badge>
+                )}
                 {status === "error" && <Badge variant="club">Backend issue</Badge>}
-                {status === "ok" && <Badge variant="pickle">{filtered.length} matches</Badge>}
+                {status === "ok" && (
+                  <Badge variant="pickle">{filtered.length} matches</Badge>
+                )}
               </HStack>
 
               <Text opacity={0.85} maxW="70ch">
-                Enter scores for round robin and playoffs. Once finals are scored, semis are locked (reset playoffs to change).
+                Enter scores for round robin and playoffs. Once finals are
+                scored, semis are locked (reset playoffs to change).
               </Text>
             </Stack>
 
@@ -248,11 +304,13 @@ export default function MatchSchedule() {
                 <HStack gap={3} w={{ base: "100%", md: "auto" }}>
                   <Text fontWeight="700">Filter</Text>
 
-                  {/* Chakra v3 Select */}
                   <Select.Root
                     value={[phaseFilter]}
-                    onValueChange={(details) => setPhaseFilter(details.value?.[0] ?? "ALL")}
+                    onValueChange={(details) =>
+                      setPhaseFilter(details.value?.[0] ?? "ALL")
+                    }
                     size="md"
+                    disabled={!tid}
                   >
                     <Select.Trigger maxW="240px">
                       <Select.ValueText placeholder="All phases" />
@@ -282,6 +340,7 @@ export default function MatchSchedule() {
                     placeholder="Search team name or match id…"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
+                    disabled={!tid}
                   />
                 </Box>
               </Flex>
@@ -291,7 +350,30 @@ export default function MatchSchedule() {
           {/* Table */}
           <Card.Root>
             <Card.Body>
-              {status === "loading" ? (
+              {!tid ? (
+                <Box
+                  border="1px dashed"
+                  borderColor="border"
+                  borderRadius="2xl"
+                  p={{ base: 6, md: 10 }}
+                  textAlign="center"
+                  bg="white"
+                >
+                  <Heading size="md" mb={2}>
+                    No tournament selected
+                  </Heading>
+                  <Text opacity={0.8} mb={5}>
+                    Create a tournament (or pick one) so we know which match
+                    schedule to load.
+                  </Text>
+                  <Button
+                    variant="pickle"
+                    onClick={() => navigate("/tournaments/new")}
+                  >
+                    Create Tournament
+                  </Button>
+                </Box>
+              ) : status === "loading" ? (
                 <Text>Loading match schedule…</Text>
               ) : status === "error" ? (
                 <Text>Could not load matches. Check backend logs.</Text>
@@ -331,9 +413,17 @@ export default function MatchSchedule() {
                   <Table.Body>
                     {filtered.map((m) => {
                       const phaseMeta = labelForPhase(m.phase);
-                      const aName = teamsById.get(String(m.teamAId)) ?? `Team ${m.teamAId}`;
-                      const bName = teamsById.get(String(m.teamBId)) ?? `Team ${m.teamBId}`;
-                      const row = edits[m.id] ?? { scoreA: "", scoreB: "", saving: false, error: null };
+                      const aName =
+                        teamsById.get(String(m.teamAId)) ?? `Team ${m.teamAId}`;
+                      const bName =
+                        teamsById.get(String(m.teamBId)) ?? `Team ${m.teamBId}`;
+                      const row =
+                        edits[m.id] ?? {
+                          scoreA: "",
+                          scoreB: "",
+                          saving: false,
+                          error: null,
+                        };
 
                       const winner =
                         m.winnerId == null
@@ -345,7 +435,9 @@ export default function MatchSchedule() {
                       return (
                         <Table.Row key={`${m.phase}-${m.id}`}>
                           <Table.Cell>
-                            <Badge variant={phaseMeta.variant}>{phaseMeta.label}</Badge>
+                            <Badge variant={phaseMeta.variant}>
+                              {phaseMeta.label}
+                            </Badge>
                           </Table.Cell>
 
                           <Table.Cell fontWeight="700">{m.id}</Table.Cell>
@@ -362,7 +454,10 @@ export default function MatchSchedule() {
                               w="88px"
                               inputMode="numeric"
                               value={row.scoreA}
-                              onChange={(e) => setScore(m.id, "scoreA", e.target.value)}
+                              onChange={(e) =>
+                                setScore(m.id, "scoreA", e.target.value)
+                              }
+                              disabled={!tid}
                             />
                           </Table.Cell>
 
@@ -371,7 +466,10 @@ export default function MatchSchedule() {
                               w="88px"
                               inputMode="numeric"
                               value={row.scoreB}
-                              onChange={(e) => setScore(m.id, "scoreB", e.target.value)}
+                              onChange={(e) =>
+                                setScore(m.id, "scoreB", e.target.value)
+                              }
+                              disabled={!tid}
                             />
                           </Table.Cell>
 
@@ -388,7 +486,7 @@ export default function MatchSchedule() {
                             <Button
                               variant="pickle"
                               onClick={() => saveMatch(m)}
-                              disabled={!!row.saving}
+                              disabled={!tid || !!row.saving}
                             >
                               <HStack gap={2}>
                                 <Save size={16} />

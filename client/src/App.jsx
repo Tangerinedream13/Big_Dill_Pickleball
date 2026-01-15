@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -8,73 +8,32 @@ import {
   Flex,
   Heading,
   HStack,
+  Input,
   Stack,
   Text,
   Grid,
+  Card,
   Select,
+  createListCollection,
 } from "@chakra-ui/react";
-import { Trophy, Users, CalendarDays, Plus } from "lucide-react";
-
-import heroImg from "./assets/pickleball-hero.jpg"; // make sure this exists
 import {
-  getCurrentTournamentId,
+  Trophy,
+  Users,
+  CalendarDays,
+  Plus,
+  LogIn,
+  UserPlus,
+} from "lucide-react";
+
+import heroImg from "./assets/pickleball-hero.jpg";
+import {
   setCurrentTournamentId,
+  getCurrentTournamentId,
 } from "./tournamentStore";
 
-export default function App() {
-  const navigate = useNavigate();
-
-  // tournaments + active selection
-  const [tournaments, setTournaments] = useState([]);
-  const [activeId, setActiveId] = useState(getCurrentTournamentId());
-  const [tournamentsStatus, setTournamentsStatus] = useState("loading"); // loading | ok | error
-
-  // Silent backend ping (no UI)
-  useEffect(() => {
-    fetch("/api/message").catch((e) => console.warn("Backend check failed:", e));
-  }, []);
-
-  // Load tournaments for picker
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTournaments() {
-      try {
-        setTournamentsStatus("loading");
-        const res = await fetch("/api/tournaments");
-        const data = await res.json().catch(() => []);
-        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
-        if (cancelled) return;
-
-        setTournaments(Array.isArray(data) ? data : []);
-        setTournamentsStatus("ok");
-
-        // If nothing selected yet, default to the newest (first item in your API order)
-        const current = getCurrentTournamentId();
-        if (!current && Array.isArray(data) && data.length > 0) {
-          const newestId = String(data[0].id);
-          setActiveId(newestId);
-          setCurrentTournamentId(newestId);
-        } else {
-          setActiveId(current);
-        }
-      } catch (e) {
-        if (cancelled) return;
-        console.error("Failed to load tournaments:", e);
-        setTournamentsStatus("error");
-      }
-    }
-
-    loadTournaments();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const hasTournamentSelected = !!activeId;
-
-  const Surface = ({ children, ...props }) => (
+// ✅ IMPORTANT: these must be OUTSIDE App() so they don't remount on every keystroke
+function Surface({ children, ...props }) {
+  return (
     <Box
       bg="white"
       border="1px solid"
@@ -86,9 +45,11 @@ export default function App() {
       {children}
     </Box>
   );
+}
 
-  const ActionTile = ({ icon, title, desc, cta, onClick, disabled }) => (
-    <Surface p={5} opacity={disabled ? 0.6 : 1}>
+function ActionTile({ icon, title, desc, cta, onClick }) {
+  return (
+    <Surface p={5}>
       <HStack gap={3} mb={2}>
         <Box
           w="36px"
@@ -109,16 +70,120 @@ export default function App() {
         {desc}
       </Text>
 
-      <Button
-        w="full"
-        variant="outline"
-        onClick={onClick}
-        disabled={disabled}
-      >
+      <Button w="full" variant="outline" onClick={onClick} type="button">
         {cta}
       </Button>
     </Surface>
   );
+}
+
+export default function App() {
+  const navigate = useNavigate();
+
+  // Silent backend ping (no UI)
+  useEffect(() => {
+    fetch("/api/message").catch((e) =>
+      console.warn("Backend check failed:", e)
+    );
+  }, []);
+
+  // ---------------------------
+  // Join Tournament UI state
+  // ---------------------------
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [tournamentsStatus, setTournamentsStatus] = useState("idle"); // idle | loading | ok | error
+  const [tournaments, setTournaments] = useState([]);
+  const [tournamentsError, setTournamentsError] = useState("");
+
+  const [joinTournamentId, setJoinTournamentIdState] = useState(
+    getCurrentTournamentId() || ""
+  );
+  const [joinName, setJoinName] = useState("");
+  const [joinEmail, setJoinEmail] = useState("");
+  const [joinDupr, setJoinDupr] = useState("");
+  const [joinStatus, setJoinStatus] = useState("idle"); // idle | saving | ok | error
+  const [joinError, setJoinError] = useState("");
+
+  const currentTid = getCurrentTournamentId();
+
+  async function loadTournaments() {
+    setTournamentsError("");
+    setTournamentsStatus("loading");
+    try {
+      const res = await fetch("/api/tournaments");
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      setTournaments(Array.isArray(data) ? data : []);
+      setTournamentsStatus("ok");
+    } catch (e) {
+      console.error(e);
+      setTournamentsStatus("error");
+      setTournamentsError(e?.message || "Could not load tournaments.");
+    }
+  }
+
+  // when user opens Join panel, fetch tournaments (once)
+  useEffect(() => {
+    if (joinOpen && tournamentsStatus === "idle") loadTournaments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinOpen]);
+
+  // ✅ Chakra v3 collection-based select
+  const tournamentCollection = useMemo(() => {
+    const items = (tournaments || []).map((t) => ({
+      value: String(t.id),
+      label: t.name ?? `Tournament ${t.id}`,
+    }));
+    return createListCollection({ items });
+  }, [tournaments]);
+
+  const canJoinSubmit = useMemo(() => {
+    const nameOk = joinName.trim().length > 0;
+    const emailOk = joinEmail.trim().includes("@");
+    const tidOk = String(joinTournamentId || "").trim().length > 0;
+    return nameOk && emailOk && tidOk && joinStatus !== "saving";
+  }, [joinName, joinEmail, joinTournamentId, joinStatus]);
+
+  function setJoinTournamentId(id) {
+    const next = String(id || "");
+    setJoinTournamentIdState(next);
+    if (next) setCurrentTournamentId(next);
+  }
+
+  async function submitJoin(e) {
+    e?.preventDefault();
+    setJoinError("");
+    setJoinStatus("saving");
+
+    const tid = String(joinTournamentId || "").trim();
+    const name = joinName.trim();
+    const email = joinEmail.trim().toLowerCase();
+    const duprRating = joinDupr.trim(); // keep as string
+
+    try {
+      if (!tid) throw new Error("Please pick a tournament.");
+      if (!name) throw new Error("Name is required.");
+      if (!email || !email.includes("@"))
+        throw new Error("Valid email is required.");
+
+      const res = await fetch(`/api/tournaments/${tid}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, duprRating }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      setCurrentTournamentId(tid);
+      setJoinStatus("ok");
+      navigate("/players");
+    } catch (err) {
+      console.error(err);
+      setJoinStatus("error");
+      setJoinError(err?.message || "Signup failed.");
+    }
+  }
 
   return (
     <Box
@@ -150,22 +215,11 @@ export default function App() {
                     Big Dill Pickleball
                   </Heading>
 
-                  <Badge
-                    bg="club.100"
-                    color="club.900"
-                    borderRadius="full"
-                    px={3}
-                    py={1}
-                    fontWeight="800"
-                  >
-                    {tournamentsStatus === "loading"
-                      ? "Loading tournaments…"
-                      : tournamentsStatus === "error"
-                      ? "Tournaments unavailable"
-                      : hasTournamentSelected
-                      ? `Tournament #${activeId}`
-                      : "Select a tournament"}
-                  </Badge>
+                  {currentTid ? (
+                    <Badge variant="pickle">Tournament selected</Badge>
+                  ) : (
+                    <Badge variant="club">No tournament selected</Badge>
+                  )}
                 </HStack>
 
                 <Text
@@ -173,95 +227,213 @@ export default function App() {
                   opacity={0.9}
                   maxW="60ch"
                 >
-                  Tournament management for pickleball - round robin, playoffs,
+                  Tournament management for pickleball — round robin, playoffs,
                   brackets, standings, and score entry.
                 </Text>
 
-                {/* Tournament Picker */}
-                <Stack gap={2} maxW="380px">
-                  <Text fontSize="sm" fontWeight="800" color="club.900">
-                    Active Tournament
-                  </Text>
-
-                  <Select.Root
-                    value={activeId ? [String(activeId)] : []}
-                    onValueChange={(details) => {
-                      const id = details.value?.[0] ?? "";
-                      setActiveId(id);
-                      if (id) setCurrentTournamentId(id);
-                    }}
-                    disabled={tournamentsStatus !== "ok"}
-                    size="md"
-                  >
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Select tournament…" />
-                    </Select.Trigger>
-
-                    <Select.Content>
-                      {tournaments.map((t) => (
-                        <Select.Item
-                          key={String(t.id)}
-                          item={{ value: String(t.id) }}
-                        >
-                          {t.name}
-                        </Select.Item>
-                      ))}
-                    </Select.Content>
-                  </Select.Root>
-
-                  {!hasTournamentSelected ? (
-                    <Text fontSize="xs" opacity={0.75}>
-                      Select a tournament to view brackets and match schedule.
-                    </Text>
-                  ) : null}
-                </Stack>
-
-                {/* Primary actions */}
+                {/* Primary options: Join / Create */}
                 <HStack gap={3} flexWrap="wrap" pt={2}>
                   <Button
+                    type="button"
+                    bg="club.900"
+                    color="white"
+                    _hover={{ bg: "club.800" }}
+                    onClick={() => setJoinOpen((v) => !v)}
+                  >
+                    <HStack gap={2}>
+                      <LogIn size={18} />
+                      <span>
+                        {joinOpen ? "Close Join" : "Join a Tournament"}
+                      </span>
+                    </HStack>
+                  </Button>
+
+                  <Button
+                    type="button"
                     variant="pickle"
                     onClick={() => navigate("/tournaments/new")}
                   >
                     <HStack gap={2}>
                       <Plus size={18} />
-                      <span>New Tournament</span>
-                    </HStack>
-                  </Button>
-
-                  <Button
-                    bg="club.900"
-                    color="white"
-                    _hover={{ bg: "club.800" }}
-                    onClick={() => navigate("/bracket")}
-                    disabled={!hasTournamentSelected}
-                  >
-                    <HStack gap={2}>
-                      <Trophy size={18} />
-                      <span>View Bracket</span>
-                    </HStack>
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/matches")}
-                    disabled={!hasTournamentSelected}
-                  >
-                    <HStack gap={2}>
-                      <CalendarDays size={18} />
-                      <span>Match Schedule</span>
-                    </HStack>
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/players")}
-                  >
-                    <HStack gap={2}>
-                      <Users size={18} />
-                      <span>Players</span>
+                      <span>Create a Tournament</span>
                     </HStack>
                   </Button>
                 </HStack>
+
+                {/* Join panel */}
+                {joinOpen ? (
+                  <Card.Root mt={3}>
+                    <Card.Body>
+                      <Stack gap={4} as="form" onSubmit={submitJoin}>
+                        <HStack justify="space-between" flexWrap="wrap">
+                          <HStack gap={2}>
+                            <UserPlus size={18} />
+                            <Text fontWeight="800">Join Tournament</Text>
+                            {joinStatus === "saving" ? (
+                              <Badge variant="club">Signing up…</Badge>
+                            ) : null}
+                            {joinStatus === "error" ? (
+                              <Badge variant="club">Needs attention</Badge>
+                            ) : null}
+                          </HStack>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={loadTournaments}
+                            disabled={tournamentsStatus === "loading"}
+                          >
+                            Refresh tournaments
+                          </Button>
+                        </HStack>
+
+                        {tournamentsStatus === "error" ? (
+                          <Box
+                            border="1px solid"
+                            borderColor="border"
+                            p={3}
+                            borderRadius="xl"
+                          >
+                            <Text fontWeight="700" mb={1}>
+                              Couldn’t load tournaments
+                            </Text>
+                            <Text opacity={0.85}>{tournamentsError}</Text>
+                          </Box>
+                        ) : null}
+
+                        {joinError ? (
+                          <Box
+                            border="1px solid"
+                            borderColor="border"
+                            p={3}
+                            borderRadius="xl"
+                          >
+                            <Text fontWeight="700" mb={1}>
+                              Couldn’t sign you up
+                            </Text>
+                            <Text opacity={0.85}>{joinError}</Text>
+                          </Box>
+                        ) : null}
+
+                        {/* Tournament select */}
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Tournament
+                          </Text>
+
+                          <Select.Root
+                            collection={tournamentCollection}
+                            value={joinTournamentId ? [joinTournamentId] : []}
+                            onValueChange={(details) =>
+                              setJoinTournamentId(details.value?.[0] ?? "")
+                            }
+                          >
+                            <Select.Trigger
+                              maxW={{ base: "100%", md: "420px" }}
+                            >
+                              <Select.ValueText
+                                placeholder={
+                                  tournamentsStatus === "loading"
+                                    ? "Loading tournaments…"
+                                    : "Select a tournament"
+                                }
+                              />
+                            </Select.Trigger>
+
+                            <Select.Content>
+                              {tournamentCollection.items.length === 0 ? (
+                                <Select.Item
+                                  item={{
+                                    value: "__none__",
+                                    label: "No tournaments found",
+                                  }}
+                                  disabled
+                                >
+                                  No tournaments found
+                                </Select.Item>
+                              ) : (
+                                tournamentCollection.items.map((opt) => (
+                                  <Select.Item key={opt.value} item={opt}>
+                                    {opt.label} (ID: {opt.value})
+                                  </Select.Item>
+                                ))
+                              )}
+                            </Select.Content>
+                          </Select.Root>
+
+                          <Text fontSize="xs" opacity={0.75}>
+                            Tip: if you created multiple “Winter Classic”
+                            entries while testing, pick the latest ID from the
+                            dropdown.
+                          </Text>
+                        </Stack>
+
+                        {/* Fields */}
+                        <Grid
+                          templateColumns={{
+                            base: "1fr",
+                            md: "repeat(3, 1fr)",
+                          }}
+                          gap={3}
+                        >
+                          <Stack gap={2}>
+                            <Text fontSize="sm" fontWeight="700">
+                              Your name
+                            </Text>
+                            <Input
+                              value={joinName}
+                              onChange={(e) => setJoinName(e.target.value)}
+                              placeholder="ex: Maria Haddon"
+                            />
+                          </Stack>
+
+                          <Stack gap={2}>
+                            <Text fontSize="sm" fontWeight="700">
+                              Email
+                            </Text>
+                            <Input
+                              value={joinEmail}
+                              onChange={(e) => setJoinEmail(e.target.value)}
+                              placeholder="ex: maria@email.com"
+                              inputMode="email"
+                            />
+                          </Stack>
+
+                          <Stack gap={2}>
+                            <Text fontSize="sm" fontWeight="700">
+                              DUPR (optional)
+                            </Text>
+                            <Input
+                              value={joinDupr}
+                              onChange={(e) => setJoinDupr(e.target.value)}
+                              placeholder="ex: 3.5"
+                              inputMode="decimal"
+                            />
+                          </Stack>
+                        </Grid>
+
+                        <HStack justify="flex-end" gap={2}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setJoinOpen(false)}
+                          >
+                            Cancel
+                          </Button>
+
+                          <Button
+                            variant="pickle"
+                            type="submit"
+                            disabled={!canJoinSubmit}
+                          >
+                            Sign up
+                          </Button>
+                        </HStack>
+                      </Stack>
+                    </Card.Body>
+                  </Card.Root>
+                ) : null}
               </Stack>
 
               {/* RIGHT IMAGE */}
@@ -320,7 +492,6 @@ export default function App() {
                 desc="Add and manage player rosters."
                 cta="View Players"
                 onClick={() => navigate("/players")}
-                disabled={false}
               />
               <ActionTile
                 icon={<CalendarDays size={18} />}
@@ -328,7 +499,6 @@ export default function App() {
                 desc="Enter scores and track matches."
                 cta="Open Schedule"
                 onClick={() => navigate("/matches")}
-                disabled={!hasTournamentSelected}
               />
               <ActionTile
                 icon={<Trophy size={18} />}
@@ -336,7 +506,6 @@ export default function App() {
                 desc="Generate and view playoffs and standings."
                 cta="Go to Bracket"
                 onClick={() => navigate("/bracket")}
-                disabled={!hasTournamentSelected}
               />
             </Grid>
           </Stack>

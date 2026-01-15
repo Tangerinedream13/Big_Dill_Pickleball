@@ -272,7 +272,9 @@ export default function MatchSchedule() {
                 {status === "no-tournament" && (
                   <Badge variant="club">No tournament selected</Badge>
                 )}
-                {status === "error" && <Badge variant="club">Backend issue</Badge>}
+                {status === "error" && (
+                  <Badge variant="club">Backend issue</Badge>
+                )}
                 {status === "ok" && (
                   <Badge variant="pickle">{filtered.length} matches</Badge>
                 )}
@@ -316,11 +318,19 @@ export default function MatchSchedule() {
                       <Select.ValueText placeholder="All phases" />
                     </Select.Trigger>
                     <Select.Content>
-                      <Select.Item item={{ value: "ALL" }}>All phases</Select.Item>
-                      <Select.Item item={{ value: "RR" }}>Round Robin</Select.Item>
-                      <Select.Item item={{ value: "SF" }}>Semifinals</Select.Item>
+                      <Select.Item item={{ value: "ALL" }}>
+                        All phases
+                      </Select.Item>
+                      <Select.Item item={{ value: "RR" }}>
+                        Round Robin
+                      </Select.Item>
+                      <Select.Item item={{ value: "SF" }}>
+                        Semifinals
+                      </Select.Item>
                       <Select.Item item={{ value: "FINAL" }}>Final</Select.Item>
-                      <Select.Item item={{ value: "THIRD" }}>Third Place</Select.Item>
+                      <Select.Item item={{ value: "THIRD" }}>
+                        Third Place
+                      </Select.Item>
                     </Select.Content>
                   </Select.Root>
                 </HStack>
@@ -406,7 +416,9 @@ export default function MatchSchedule() {
                       <Table.ColumnHeader>Score A</Table.ColumnHeader>
                       <Table.ColumnHeader>Score B</Table.ColumnHeader>
                       <Table.ColumnHeader>Winner</Table.ColumnHeader>
-                      <Table.ColumnHeader textAlign="end">Save</Table.ColumnHeader>
+                      <Table.ColumnHeader textAlign="end">
+                        Save
+                      </Table.ColumnHeader>
                     </Table.Row>
                   </Table.Header>
 
@@ -417,13 +429,12 @@ export default function MatchSchedule() {
                         teamsById.get(String(m.teamAId)) ?? `Team ${m.teamAId}`;
                       const bName =
                         teamsById.get(String(m.teamBId)) ?? `Team ${m.teamBId}`;
-                      const row =
-                        edits[m.id] ?? {
-                          scoreA: "",
-                          scoreB: "",
-                          saving: false,
-                          error: null,
-                        };
+                      const row = edits[m.id] ?? {
+                        scoreA: "",
+                        scoreB: "",
+                        saving: false,
+                        error: null,
+                      };
 
                       const winner =
                         m.winnerId == null

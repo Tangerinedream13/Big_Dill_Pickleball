@@ -18,8 +18,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const teamsRoutes = require("./routes/teams");
-
 const tournamentsRoutes = require("./routes/tournaments");
+
+const signupRoutes = require("./routes/signup");
 
 function errToMessage(err) {
   if (!err) return "Unknown error";
@@ -31,6 +32,9 @@ function errToMessage(err) {
 
 app.use(express.json());
 console.log("✅ server.js loaded, routes about to be registered");
+
+// This assumes routes/signup.js exports a function: (pool) => router
+app.use("/api", signupRoutes(pool));
 
 app.use("/api/teams", teamsRoutes);
 
@@ -409,7 +413,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     const sf2Done = semis.find((m) => m.id === "SF2")?.winnerId;
 
     if (sf1Done && sf2Done) {
-      // ✅ 409 guard: don't allow changing semis if finals already scored
+      // 409 guard: don't allow changing semis if finals already scored
       const finalsScoredRes = await pool.query(
         `
         select 1
@@ -649,26 +653,6 @@ app.patch("/api/players/:id", async (req, res) => {
         .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
     }
 
-    const withT = `
-      update players
-      set
-        name = coalesce($1, name),
-        dupr_rating = $2
-      where tournament_id = $3 and id = $4
-      returning id, name, dupr_rating as "duprRating";
-    `;
-    const withoutT = `
-      update players
-      set
-        name = coalesce($1, name),
-        dupr_rating = $2
-      where id = $3
-      returning id, name, dupr_rating as "duprRating";
-    `;
-
-    // If dupr is not provided, keep current value by passing null? -> we don't want that.
-    // So: pass current value by using "dupr_rating = coalesce($2, dupr_rating)" only if undefined.
-    // We’ll do it by rewriting params:
     const duprParam = dupr === undefined ? null : dupr;
     const nameParam = name === undefined ? null : name;
 
@@ -743,7 +727,6 @@ app.delete("/api/players/:id", async (req, res) => {
 });
 
 // ------------------ (OPTIONAL) /api/matches mock route ------------------
-// If you still use this anywhere in the UI, keep it. Otherwise you can delete it safely.
 app.get("/api/matches", (req, res) => {
   res.json([
     {

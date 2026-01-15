@@ -17,6 +17,14 @@ console.log("✅ after engine");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+function errToMessage(err) {
+  if (!err) return "Unknown error";
+  if (typeof err === "string") return err;
+  return (
+    err.message || err.detail || err.hint || err.code || JSON.stringify(err)
+  );
+}
+
 app.use(express.json());
 console.log("✅ server.js loaded, routes about to be registered");
 
@@ -336,12 +344,20 @@ app.post("/api/playoffs/generate", async (req, res) => {
     const tournamentId = await getDefaultTournamentId();
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
 
-    const standings = engine.computeStandings(teams.map((t) => t.id), rrMatches);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
     const semis = engine.generatePlayoffsFromStandings(standings);
 
-    await pool.query(`delete from matches where tournament_id = $1 and phase = 'SF';`, [tournamentId]);
+    await pool.query(
+      `delete from matches where tournament_id = $1 and phase = 'SF';`,
+      [tournamentId]
+    );
 
     if (semis.length > 0) {
       const params = [];
@@ -392,7 +408,8 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (sfRes.rowCount === 0) return res.status(404).json({ error: `SF match not found: ${id}` });
+    if (sfRes.rowCount === 0)
+      return res.status(404).json({ error: `SF match not found: ${id}` });
 
     const sf = sfRes.rows[0];
     const winnerId = scoreA > scoreB ? sf.teamAId : sf.teamBId;
@@ -464,7 +481,10 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     }
 
     const semisOut = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-    const finalsOut = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+    const finalsOut = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
 
     res.json({ semis: semisOut, finals: finalsOut, tournamentId });
   } catch (err) {
@@ -496,7 +516,8 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (mRes.rowCount === 0) return res.status(404).json({ error: `Finals match not found: ${id}` });
+    if (mRes.rowCount === 0)
+      return res.status(404).json({ error: `Finals match not found: ${id}` });
 
     const m = mRes.rows[0];
     const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
@@ -518,7 +539,10 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       [scoreA, scoreB, winnerId, tournamentId, id]
     );
 
-    const finals = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+    const finals = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
     res.json({ match: updated.rows[0], finals, tournamentId });
   } catch (err) {
     console.error("Finals score error:", err);
@@ -584,9 +608,12 @@ app.post("/api/players", async (req, res) => {
     const dupr = parseDupr(req.body.duprRating);
 
     if (!name) return res.status(400).json({ error: "Name is required." });
-    if (Number.isNaN(dupr)) return res.status(400).json({ error: "DUPR must be a number." });
+    if (Number.isNaN(dupr))
+      return res.status(400).json({ error: "DUPR must be a number." });
     if (dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res.status(400).json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+      return res
+        .status(400)
+        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
     }
 
     const withT = `
@@ -619,17 +646,26 @@ app.patch("/api/players/:id", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid player id." });
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "Invalid player id." });
 
     const name =
-      req.body.name === undefined ? undefined : (req.body.name ?? "").toString().trim();
+      req.body.name === undefined
+        ? undefined
+        : (req.body.name ?? "").toString().trim();
     const dupr =
-      req.body.duprRating === undefined ? undefined : parseDupr(req.body.duprRating);
+      req.body.duprRating === undefined
+        ? undefined
+        : parseDupr(req.body.duprRating);
 
-    if (name !== undefined && !name) return res.status(400).json({ error: "Name cannot be empty." });
-    if (dupr !== undefined && Number.isNaN(dupr)) return res.status(400).json({ error: "DUPR must be a number." });
+    if (name !== undefined && !name)
+      return res.status(400).json({ error: "Name cannot be empty." });
+    if (dupr !== undefined && Number.isNaN(dupr))
+      return res.status(400).json({ error: "DUPR must be a number." });
     if (dupr !== undefined && dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res.status(400).json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+      return res
+        .status(400)
+        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
     }
 
     const withT = `
@@ -679,7 +715,8 @@ app.patch("/api/players/:id", async (req, res) => {
       [nameParam, duprParam, id]
     );
 
-    if (updated.rowCount === 0) return res.status(404).json({ error: `Player not found: ${id}` });
+    if (updated.rowCount === 0)
+      return res.status(404).json({ error: `Player not found: ${id}` });
 
     const p = updated.rows[0];
     res.json({ ...p, duprTier: duprLabel(p.duprRating) });
@@ -693,7 +730,8 @@ app.delete("/api/players/:id", async (req, res) => {
   try {
     const tournamentId = await getDefaultTournamentId();
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid player id." });
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "Invalid player id." });
 
     const withT = `
       delete from players
@@ -706,9 +744,15 @@ app.delete("/api/players/:id", async (req, res) => {
       returning id;
     `;
 
-    const deleted = await queryPlayersScoped(withT, [tournamentId, id], withoutT, [id]);
+    const deleted = await queryPlayersScoped(
+      withT,
+      [tournamentId, id],
+      withoutT,
+      [id]
+    );
 
-    if (deleted.rowCount === 0) return res.status(404).json({ error: `Player not found: ${id}` });
+    if (deleted.rowCount === 0)
+      return res.status(404).json({ error: `Player not found: ${id}` });
 
     res.json({ ok: true, id });
   } catch (err) {
@@ -751,7 +795,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ------------------ START SERVER (Railway-safe) ------------------
-console.log("✅ about to listen on port", PORT);
+console.log("🚀 starting express server");
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`✅ Server listening on port ${PORT}`);
 });

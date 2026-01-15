@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE } from "./apiBase";
 import {
   Badge,
   Box,
@@ -13,34 +12,19 @@ import {
   Text,
   Grid,
 } from "@chakra-ui/react";
-import { Trophy, Users, CalendarDays, Plus, Activity } from "lucide-react";
+import { Trophy, Users, CalendarDays, Plus } from "lucide-react";
 
 import heroImg from "./assets/pickleball-hero.jpg"; // make sure this exists
 
 export default function App() {
-  const [message, setMessage] = useState("Loading...");
-  const [status, setStatus] = useState("loading"); // loading | ok | error
   const navigate = useNavigate();
 
+  // Silent backend ping (no UI)
   useEffect(() => {
-    fetch(`${API_BASE}/api/message`)
-      .then((res) => res.json())
-      .then((data) => {
-        setMessage(data.text ?? "Connected");
-        setStatus("ok");
-      })
-      .catch(() => {
-        setMessage("Error connecting to backend");
-        setStatus("error");
-      });
+    fetch("/api/message").catch((e) =>
+      console.warn("Backend check failed:", e)
+    );
   }, []);
-
-  const statusBadge =
-    status === "ok"
-      ? { label: "Connected", bg: "pickle.200", color: "club.900" }
-      : status === "error"
-      ? { label: "Backend Offline", bg: "club.100", color: "club.900" }
-      : { label: "Checking…", bg: "club.100", color: "club.900" };
 
   const Surface = ({ children, ...props }) => (
     <Box
@@ -88,7 +72,6 @@ export default function App() {
       minH="100vh"
       py={{ base: 10, md: 14 }}
       bg="cream.50"
-      /* subtle club tint */
       backgroundImage="radial-gradient(900px 400px at 70% 10%, rgba(183,243,74,0.14), transparent 60%)"
     >
       <Container maxW="6xl">
@@ -113,17 +96,6 @@ export default function App() {
                   <Heading size="lg" letterSpacing="-0.02em" color="club.900">
                     Big Dill Pickleball
                   </Heading>
-
-                  <Badge
-                    px={3}
-                    py={1}
-                    borderRadius="full"
-                    bg={statusBadge.bg}
-                    color={statusBadge.color}
-                    fontWeight="800"
-                  >
-                    {statusBadge.label}
-                  </Badge>
                 </HStack>
 
                 <Text
@@ -147,7 +119,6 @@ export default function App() {
                     </HStack>
                   </Button>
 
-                  {/* Make sure text is visible even if theme is odd */}
                   <Button
                     bg="club.900"
                     color="white"
@@ -180,21 +151,6 @@ export default function App() {
                     </HStack>
                   </Button>
                 </HStack>
-
-                {/* System status */}
-                <Box mt={2}>
-                  <Surface p={4} bg="white">
-                    <HStack gap={2} mb={1}>
-                      <Activity size={18} />
-                      <Text fontWeight="800" color="club.900">
-                        System Status
-                      </Text>
-                    </HStack>
-                    <Text fontSize="sm" opacity={0.85}>
-                      {message}
-                    </Text>
-                  </Surface>
-                </Box>
               </Stack>
 
               {/* RIGHT IMAGE */}
@@ -223,7 +179,7 @@ export default function App() {
                 />
                 <Box position="absolute" bottom="14px" left="14px">
                   <Badge
-                    bg="rgba(255,255,255,0.90)"
+                    bg="rgba(255,255,255,0.9)"
                     color="club.900"
                     borderRadius="full"
                     px={3}
@@ -237,7 +193,7 @@ export default function App() {
             </Flex>
           </Surface>
 
-          {/* QUICK ACTIONS SECTION (adds “layout rhythm”) */}
+          {/* QUICK ACTIONS SECTION */}
           <Stack gap={3}>
             <Heading size="md" color="club.900">
               Quick Actions

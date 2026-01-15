@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -11,20 +11,68 @@ import {
   Stack,
   Text,
   Grid,
+  Select,
 } from "@chakra-ui/react";
 import { Trophy, Users, CalendarDays, Plus } from "lucide-react";
 
 import heroImg from "./assets/pickleball-hero.jpg"; // make sure this exists
+import {
+  getCurrentTournamentId,
+  setCurrentTournamentId,
+} from "./tournamentStore";
 
 export default function App() {
   const navigate = useNavigate();
 
+  // tournaments + active selection
+  const [tournaments, setTournaments] = useState([]);
+  const [activeId, setActiveId] = useState(getCurrentTournamentId());
+  const [tournamentsStatus, setTournamentsStatus] = useState("loading"); // loading | ok | error
+
   // Silent backend ping (no UI)
   useEffect(() => {
-    fetch("/api/message").catch((e) =>
-      console.warn("Backend check failed:", e)
-    );
+    fetch("/api/message").catch((e) => console.warn("Backend check failed:", e));
   }, []);
+
+  // Load tournaments for picker
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTournaments() {
+      try {
+        setTournamentsStatus("loading");
+        const res = await fetch("/api/tournaments");
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+        if (cancelled) return;
+
+        setTournaments(Array.isArray(data) ? data : []);
+        setTournamentsStatus("ok");
+
+        // If nothing selected yet, default to the newest (first item in your API order)
+        const current = getCurrentTournamentId();
+        if (!current && Array.isArray(data) && data.length > 0) {
+          const newestId = String(data[0].id);
+          setActiveId(newestId);
+          setCurrentTournamentId(newestId);
+        } else {
+          setActiveId(current);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("Failed to load tournaments:", e);
+        setTournamentsStatus("error");
+      }
+    }
+
+    loadTournaments();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasTournamentSelected = !!activeId;
 
   const Surface = ({ children, ...props }) => (
     <Box
@@ -39,8 +87,8 @@ export default function App() {
     </Box>
   );
 
-  const ActionTile = ({ icon, title, desc, cta, onClick }) => (
-    <Surface p={5}>
+  const ActionTile = ({ icon, title, desc, cta, onClick, disabled }) => (
+    <Surface p={5} opacity={disabled ? 0.6 : 1}>
       <HStack gap={3} mb={2}>
         <Box
           w="36px"
@@ -61,7 +109,12 @@ export default function App() {
         {desc}
       </Text>
 
-      <Button w="full" variant="outline" onClick={onClick}>
+      <Button
+        w="full"
+        variant="outline"
+        onClick={onClick}
+        disabled={disabled}
+      >
         {cta}
       </Button>
     </Surface>
@@ -96,6 +149,23 @@ export default function App() {
                   <Heading size="lg" letterSpacing="-0.02em" color="club.900">
                     Big Dill Pickleball
                   </Heading>
+
+                  <Badge
+                    bg="club.100"
+                    color="club.900"
+                    borderRadius="full"
+                    px={3}
+                    py={1}
+                    fontWeight="800"
+                  >
+                    {tournamentsStatus === "loading"
+                      ? "Loading tournaments…"
+                      : tournamentsStatus === "error"
+                      ? "Tournaments unavailable"
+                      : hasTournamentSelected
+                      ? `Tournament #${activeId}`
+                      : "Select a tournament"}
+                  </Badge>
                 </HStack>
 
                 <Text
@@ -106,6 +176,45 @@ export default function App() {
                   Tournament management for pickleball - round robin, playoffs,
                   brackets, standings, and score entry.
                 </Text>
+
+                {/* Tournament Picker */}
+                <Stack gap={2} maxW="380px">
+                  <Text fontSize="sm" fontWeight="800" color="club.900">
+                    Active Tournament
+                  </Text>
+
+                  <Select.Root
+                    value={activeId ? [String(activeId)] : []}
+                    onValueChange={(details) => {
+                      const id = details.value?.[0] ?? "";
+                      setActiveId(id);
+                      if (id) setCurrentTournamentId(id);
+                    }}
+                    disabled={tournamentsStatus !== "ok"}
+                    size="md"
+                  >
+                    <Select.Trigger>
+                      <Select.ValueText placeholder="Select tournament…" />
+                    </Select.Trigger>
+
+                    <Select.Content>
+                      {tournaments.map((t) => (
+                        <Select.Item
+                          key={String(t.id)}
+                          item={{ value: String(t.id) }}
+                        >
+                          {t.name}
+                        </Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+
+                  {!hasTournamentSelected ? (
+                    <Text fontSize="xs" opacity={0.75}>
+                      Select a tournament to view brackets and match schedule.
+                    </Text>
+                  ) : null}
+                </Stack>
 
                 {/* Primary actions */}
                 <HStack gap={3} flexWrap="wrap" pt={2}>
@@ -124,6 +233,7 @@ export default function App() {
                     color="white"
                     _hover={{ bg: "club.800" }}
                     onClick={() => navigate("/bracket")}
+                    disabled={!hasTournamentSelected}
                   >
                     <HStack gap={2}>
                       <Trophy size={18} />
@@ -134,6 +244,7 @@ export default function App() {
                   <Button
                     variant="outline"
                     onClick={() => navigate("/matches")}
+                    disabled={!hasTournamentSelected}
                   >
                     <HStack gap={2}>
                       <CalendarDays size={18} />
@@ -209,6 +320,7 @@ export default function App() {
                 desc="Add and manage player rosters."
                 cta="View Players"
                 onClick={() => navigate("/players")}
+                disabled={false}
               />
               <ActionTile
                 icon={<CalendarDays size={18} />}
@@ -216,6 +328,7 @@ export default function App() {
                 desc="Enter scores and track matches."
                 cta="Open Schedule"
                 onClick={() => navigate("/matches")}
+                disabled={!hasTournamentSelected}
               />
               <ActionTile
                 icon={<Trophy size={18} />}
@@ -223,6 +336,7 @@ export default function App() {
                 desc="Generate and view playoffs and standings."
                 cta="Go to Bracket"
                 onClick={() => navigate("/bracket")}
+                disabled={!hasTournamentSelected}
               />
             </Grid>
           </Stack>

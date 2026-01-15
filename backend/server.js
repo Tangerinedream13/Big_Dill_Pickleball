@@ -1,5 +1,5 @@
 // backend/server.js
-// backend/server.js
+
 console.log("TOP OF SERVER.JS");
 
 require("dotenv").config();
@@ -17,6 +17,10 @@ console.log("✅ after engine");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const teamsRoutes = require("./routes/teams");
+
+const tournamentsRoutes = require("./routes/tournaments");
+
 function errToMessage(err) {
   if (!err) return "Unknown error";
   if (typeof err === "string") return err;
@@ -27,6 +31,10 @@ function errToMessage(err) {
 
 app.use(express.json());
 console.log("✅ server.js loaded, routes about to be registered");
+
+app.use("/api/teams", teamsRoutes);
+
+app.use("/api/tournaments", tournamentsRoutes);
 
 // ------------------ PROCESS ERROR LOGGING ------------------
 process.on("unhandledRejection", (reason) => {
@@ -45,11 +53,25 @@ app.get("/health", (req, res) => {
 // ------------------ HELPERS (DB) ------------------
 async function getDefaultTournamentId() {
   const r = await pool.query(
-    "select id from tournaments order by id asc limit 1;"
+    "select id from tournaments order by id desc limit 1;"
   );
   if (r.rowCount === 0)
     throw new Error("No tournaments found. Seed one first.");
-  return r.rows[0].id;
+  return String(r.rows[0].id);
+}
+
+function parseTournamentId(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return String(n);
+}
+
+async function resolveTournamentId(req) {
+  // allow tournamentId in query string (?tournamentId=6) or request body ({ tournamentId: 6 })
+  const fromQuery = parseTournamentId(req.query?.tournamentId);
+  const fromBody = parseTournamentId(req.body?.tournamentId);
+  return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
 async function getTeamsForTournament(tournamentId) {
@@ -143,47 +165,6 @@ async function queryPlayersScoped(
 // Test message route
 app.get("/api/message", (req, res) => {
   res.json({ text: "Hello from the Big Dill Pickleball backend!" });
-});
-
-// ------------------ TOURNAMENTS (DB-BACKED) ------------------
-
-// GET /api/tournaments
-app.get("/api/tournaments", async (req, res) => {
-  try {
-    const r = await pool.query(
-      `
-      select id, name
-      from tournaments
-      order by id desc;
-      `
-    );
-    res.json(r.rows);
-  } catch (err) {
-    console.error("GET /api/tournaments error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/tournaments
-app.post("/api/tournaments", async (req, res) => {
-  try {
-    const name = (req.body.name ?? "").toString().trim();
-    if (!name) return res.status(400).json({ error: "Name is required." });
-
-    const inserted = await pool.query(
-      `
-      insert into tournaments (name)
-      values ($1)
-      returning id, name;
-      `,
-      [name]
-    );
-
-    res.status(201).json(inserted.rows[0]);
-  } catch (err) {
-    console.error("POST /api/tournaments error:", err);
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // ------------------ TOURNAMENT STATE (DB-BACKED) ------------------

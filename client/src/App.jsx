@@ -492,6 +492,7 @@ export default function App() {
                 desc="Add and manage player rosters."
                 cta="View Players"
                 onClick={() => navigate("/players")}
+                disabled={false}
               />
               <ActionTile
                 icon={<CalendarDays size={18} />}
@@ -499,6 +500,7 @@ export default function App() {
                 desc="Enter scores and track matches."
                 cta="Open Schedule"
                 onClick={() => navigate("/matches")}
+                disabled={!hasTournamentSelected}
               />
               <ActionTile
                 icon={<Trophy size={18} />}
@@ -506,6 +508,7 @@ export default function App() {
                 desc="Generate and view playoffs and standings."
                 cta="Go to Bracket"
                 onClick={() => navigate("/bracket")}
+                disabled={!hasTournamentSelected}
               />
             </Grid>
           </Stack>

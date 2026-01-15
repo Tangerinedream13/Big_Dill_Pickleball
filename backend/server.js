@@ -18,9 +18,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const teamsRoutes = require("./routes/teams");
-const tournamentsRoutes = require("./routes/tournaments");
 
-const signupRoutes = require("./routes/signup");
+const tournamentsRoutes = require("./routes/tournaments");
 
 function errToMessage(err) {
   if (!err) return "Unknown error";
@@ -32,9 +31,6 @@ function errToMessage(err) {
 
 app.use(express.json());
 console.log("✅ server.js loaded, routes about to be registered");
-
-// This assumes routes/signup.js exports a function: (pool) => router
-app.use("/api", signupRoutes(pool));
 
 app.use("/api/teams", teamsRoutes);
 

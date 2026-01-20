@@ -18,9 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const teamsRoutes = require("./routes/teams");
-
 const tournamentsRoutes = require("./routes/tournaments");
-
 const signupRoutes = require("./routes/signup");
 
 function errToMessage(err) {
@@ -35,9 +33,7 @@ app.use(express.json());
 console.log("✅ server.js loaded, routes about to be registered");
 
 app.use("/api/teams", teamsRoutes);
-
 app.use("/api/tournaments", tournamentsRoutes);
-
 app.use("/api", signupRoutes(pool));
 
 // ------------------ PROCESS ERROR LOGGING ------------------
@@ -171,10 +167,195 @@ app.get("/api/message", (req, res) => {
   res.json({ text: "Hello from the Big Dill Pickleball backend!" });
 });
 
+/* =========================================================
+   ✅ NEW: Tournament-scoped Players + Team Creation (Option A)
+========================================================= */
+
+// GET players in a specific tournament, including whether they are already on a team
+app.get("/api/tournaments/:tid/players", async (req, res) => {
+  const tid = Number(req.params.tid);
+  if (!Number.isInteger(tid) || tid <= 0) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const q = `
+      select
+        p.id,
+        p.name,
+        p.email,
+        p.dupr_rating as "duprRating",
+        exists (
+          select 1
+          from team_players tp
+          join tournament_teams tt on tt.team_id = tp.team_id
+          where tt.tournament_id = $1
+            and tp.player_id = p.id
+        ) as "inTeam"
+      from tournament_players tpp
+      join players p on p.id = tpp.player_id
+      where tpp.tournament_id = $1
+      order by p.created_at desc, p.id desc;
+    `;
+    const r = await pool.query(q, [tid]);
+
+    res.json(
+      r.rows.map((p) => ({
+        ...p,
+        duprTier: duprLabel(p.duprRating),
+      }))
+    );
+  } catch (err) {
+    console.error("GET /api/tournaments/:tid/players error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// POST create a doubles team (exactly 2 players), link to tournament_teams + team_players
+app.post("/api/tournaments/:tid/teams", async (req, res) => {
+  const tid = Number(req.params.tid);
+  const playerAId = Number(req.body.playerAId);
+  const playerBId = Number(req.body.playerBId);
+  const requestedName = (req.body.teamName ?? "").toString().trim();
+
+  if (!Number.isInteger(tid) || tid <= 0) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+  if (!Number.isInteger(playerAId) || !Number.isInteger(playerBId)) {
+    return res
+      .status(400)
+      .json({ error: "playerAId and playerBId are required." });
+  }
+  if (playerAId === playerBId) {
+    return res.status(400).json({ error: "Pick two different players." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Guard: both players must be in this tournament
+    const inTournament = await client.query(
+      `
+      select count(*)::int as c
+      from tournament_players
+      where tournament_id = $1
+        and player_id in ($2, $3);
+      `,
+      [tid, playerAId, playerBId]
+    );
+
+    if (inTournament.rows?.[0]?.c !== 2) {
+      throw new Error("Both players must be signed up for this tournament.");
+    }
+
+    // Guard: neither player can already be on a team in this tournament
+    const alreadyOnTeam = await client.query(
+      `
+      select tp.player_id
+      from team_players tp
+      join tournament_teams tt on tt.team_id = tp.team_id
+      where tt.tournament_id = $1
+        and tp.player_id in ($2, $3)
+      limit 1;
+      `,
+      [tid, playerAId, playerBId]
+    );
+    if (alreadyOnTeam.rowCount > 0) {
+      throw new Error(
+        "One of those players is already on a team in this tournament."
+      );
+    }
+
+    // Auto-name if not provided
+    let finalName = requestedName;
+    if (!finalName) {
+      const n = await client.query(
+        `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
+        [tid]
+      );
+      finalName = `SPD-${tid}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
+    }
+
+    // Create team
+    const teamRow = await client.query(
+      `insert into teams(name) values ($1) returning id, name;`,
+      [finalName]
+    );
+    const teamId = teamRow.rows[0].id;
+
+    // Link two players to team
+    await client.query(
+      `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
+      [teamId, playerAId, playerBId]
+    );
+
+    // Add team to tournament
+    await client.query(
+      `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
+      [tid, teamId]
+    );
+
+    await client.query("COMMIT");
+    res.json({
+      ok: true,
+      tournamentId: tid,
+      team: { id: teamId, name: finalName },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/tournaments/:tid/teams error:", err);
+    res.status(400).json({ error: errToMessage(err) });
+  } finally {
+    client.release();
+  }
+});
+
+// Optional: list teams + members for a tournament
+app.get("/api/tournaments/:tid/teams", async (req, res) => {
+  const tid = Number(req.params.tid);
+  if (!Number.isInteger(tid) || tid <= 0) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const q = `
+      select
+        t.id as "teamId",
+        t.name as "teamName",
+        json_agg(
+          json_build_object(
+            'id', p.id,
+            'name', p.name,
+            'email', p.email,
+            'duprRating', p.dupr_rating
+          )
+          order by p.id
+        ) as "players"
+      from tournament_teams tt
+      join teams t on t.id = tt.team_id
+      join team_players tp on tp.team_id = t.id
+      join players p on p.id = tp.player_id
+      where tt.tournament_id = $1
+      group by t.id, t.name
+      order by t.id;
+    `;
+    const r = await pool.query(q, [tid]);
+    res.json(r.rows);
+  } catch (err) {
+    console.error("GET /api/tournaments/:tid/teams error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+/* =========================================================
+   ✅ FIX: Tournament State + Match Endpoints use resolveTournamentId(req)
+========================================================= */
+
 // ------------------ TOURNAMENT STATE (DB-BACKED) ------------------
 app.get("/api/tournament/state", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
 
     const teams = await getTeamsForTournament(tournamentId);
     const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
@@ -201,7 +382,7 @@ app.get("/api/tournament/state", async (req, res) => {
 // Reset tournament matches
 app.post("/api/tournament/reset", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     await pool.query(`delete from matches where tournament_id = $1;`, [
       tournamentId,
     ]);
@@ -215,8 +396,15 @@ app.post("/api/tournament/reset", async (req, res) => {
 // ------------------ ROUND ROBIN ------------------
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     const teams = await getTeamsForTournament(tournamentId);
+
+    if (!teams || teams.length < 2) {
+      return res.status(400).json({
+        error:
+          "Not enough teams. Create doubles teams first (need at least 2).",
+      });
+    }
 
     const gamesPerTeamRaw = req.body?.gamesPerTeam;
     const gamesPerTeam = Number.isFinite(Number(gamesPerTeamRaw))
@@ -265,7 +453,7 @@ app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
   const { scoreA, scoreB } = req.body;
 
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
 
     if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
       return res.status(400).json({ error: "Scores must be integers." });
@@ -326,7 +514,7 @@ app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
 // ------------------ PLAYOFFS (DB-BACKED) ------------------
 app.post("/api/playoffs/generate", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
 
     const teams = await getTeamsForTournament(tournamentId);
     const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
@@ -337,6 +525,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
       teams.map((t) => t.id),
       rrMatches
     );
+
     const semis = engine.generatePlayoffsFromStandings(standings);
 
     await pool.query(
@@ -375,7 +564,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
   const { scoreA, scoreB } = req.body;
 
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
 
     if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
       return res.status(400).json({ error: "Scores must be integers." });
@@ -393,8 +582,9 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (sfRes.rowCount === 0)
+    if (sfRes.rowCount === 0) {
       return res.status(404).json({ error: `SF match not found: ${id}` });
+    }
 
     const sf = sfRes.rows[0];
     const winnerId = scoreA > scoreB ? sf.teamAId : sf.teamBId;
@@ -483,7 +673,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
   const { scoreA, scoreB } = req.body;
 
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
 
     if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
       return res.status(400).json({ error: "Scores must be integers." });
@@ -501,8 +691,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       [tournamentId, id]
     );
 
-    if (mRes.rowCount === 0)
+    if (mRes.rowCount === 0) {
       return res.status(404).json({ error: `Finals match not found: ${id}` });
+    }
 
     const m = mRes.rows[0];
     const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
@@ -539,7 +730,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
 // Search ONLY by name OR DUPR. No "level" / no "skill".
 app.get("/api/players", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     const qRaw = (req.query.q ?? "").toString().trim();
 
     const qNum = qRaw !== "" ? Number(qRaw) : NaN;
@@ -547,7 +738,7 @@ app.get("/api/players", async (req, res) => {
     const qRounded = isNumericQuery ? Math.round(qNum * 100) / 100 : null;
 
     const withT = `
-      select id, name, dupr_rating as "duprRating"
+      select id, name, email, dupr_rating as "duprRating"
       from players
       where tournament_id = $1
         and (
@@ -558,7 +749,7 @@ app.get("/api/players", async (req, res) => {
       order by name asc;
     `;
     const withoutT = `
-      select id, name, dupr_rating as "duprRating"
+      select id, name, email, dupr_rating as "duprRating"
       from players
       where
         $1 = '' OR
@@ -588,8 +779,9 @@ app.get("/api/players", async (req, res) => {
 
 app.post("/api/players", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     const name = (req.body.name ?? "").toString().trim();
+    const email = (req.body.email ?? "").toString().trim() || null;
     const dupr = parseDupr(req.body.duprRating);
 
     if (!name) return res.status(400).json({ error: "Name is required." });
@@ -602,21 +794,21 @@ app.post("/api/players", async (req, res) => {
     }
 
     const withT = `
-      insert into players (tournament_id, name, dupr_rating)
-      values ($1, $2, $3)
-      returning id, name, dupr_rating as "duprRating";
+      insert into players (tournament_id, name, email, dupr_rating)
+      values ($1, $2, $3, $4)
+      returning id, name, email, dupr_rating as "duprRating";
     `;
     const withoutT = `
-      insert into players (name, dupr_rating)
-      values ($1, $2)
-      returning id, name, dupr_rating as "duprRating";
+      insert into players (name, email, dupr_rating)
+      values ($1, $2, $3)
+      returning id, name, email, dupr_rating as "duprRating";
     `;
 
     const inserted = await queryPlayersScoped(
       withT,
-      [tournamentId, name, dupr],
+      [tournamentId, name, email, dupr],
       withoutT,
-      [name, dupr]
+      [name, email, dupr]
     );
 
     const p = inserted.rows[0];
@@ -629,7 +821,7 @@ app.post("/api/players", async (req, res) => {
 
 app.patch("/api/players/:id", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id))
       return res.status(400).json({ error: "Invalid player id." });
@@ -638,6 +830,10 @@ app.patch("/api/players/:id", async (req, res) => {
       req.body.name === undefined
         ? undefined
         : (req.body.name ?? "").toString().trim();
+    const email =
+      req.body.email === undefined
+        ? undefined
+        : (req.body.email ?? "").toString().trim();
     const dupr =
       req.body.duprRating === undefined
         ? undefined
@@ -655,29 +851,32 @@ app.patch("/api/players/:id", async (req, res) => {
 
     const duprParam = dupr === undefined ? null : dupr;
     const nameParam = name === undefined ? null : name;
+    const emailParam = email === undefined ? null : email || null;
 
     const withT2 = `
       update players
       set
         name = coalesce($1, name),
-        dupr_rating = coalesce($2, dupr_rating)
-      where tournament_id = $3 and id = $4
-      returning id, name, dupr_rating as "duprRating";
+        email = coalesce($2, email),
+        dupr_rating = coalesce($3, dupr_rating)
+      where tournament_id = $4 and id = $5
+      returning id, name, email, dupr_rating as "duprRating";
     `;
     const withoutT2 = `
       update players
       set
         name = coalesce($1, name),
-        dupr_rating = coalesce($2, dupr_rating)
-      where id = $3
-      returning id, name, dupr_rating as "duprRating";
+        email = coalesce($2, email),
+        dupr_rating = coalesce($3, dupr_rating)
+      where id = $4
+      returning id, name, email, dupr_rating as "duprRating";
     `;
 
     const updated = await queryPlayersScoped(
       withT2,
-      [nameParam, duprParam, tournamentId, id],
+      [nameParam, emailParam, duprParam, tournamentId, id],
       withoutT2,
-      [nameParam, duprParam, id]
+      [nameParam, emailParam, duprParam, id]
     );
 
     if (updated.rowCount === 0)
@@ -693,7 +892,7 @@ app.patch("/api/players/:id", async (req, res) => {
 
 app.delete("/api/players/:id", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id))
       return res.status(400).json({ error: "Invalid player id." });

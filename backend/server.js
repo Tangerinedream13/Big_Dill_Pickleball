@@ -21,6 +21,8 @@ const teamsRoutes = require("./routes/teams");
 
 const tournamentsRoutes = require("./routes/tournaments");
 
+const signupRoutes = require("./routes/signup");
+
 function errToMessage(err) {
   if (!err) return "Unknown error";
   if (typeof err === "string") return err;
@@ -35,6 +37,8 @@ console.log("✅ server.js loaded, routes about to be registered");
 app.use("/api/teams", teamsRoutes);
 
 app.use("/api/tournaments", tournamentsRoutes);
+
+app.use("/api", signupRoutes(pool));
 
 // ------------------ PROCESS ERROR LOGGING ------------------
 process.on("unhandledRejection", (reason) => {

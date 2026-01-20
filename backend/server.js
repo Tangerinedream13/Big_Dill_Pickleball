@@ -88,6 +88,20 @@ async function getTeamsForTournament(tournamentId) {
   return r.rows;
 }
 
+function parseISODate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function minutesBetween(a, b) {
+  return Math.floor((b.getTime() - a.getTime()) / 60000);
+}
+
+function addMinutes(d, mins) {
+  return new Date(d.getTime() + mins * 60000);
+}
+
 async function getMatchesForTournamentByPhase(tournamentId, phases) {
   const r = await pool.query(
     `
@@ -98,7 +112,9 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
       team_b_id as "teamBId",
       score_a as "scoreA",
       score_b as "scoreB",
-      winner_id as "winnerId"
+      winner_id as "winnerId",
+      start_time as "startTime",
+      court
     from matches
     where tournament_id = $1
       and phase = any($2::text[])
@@ -124,6 +140,8 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     scoreA: m.scoreA,
     scoreB: m.scoreB,
     winnerId: m.winnerId,
+    startTime: m.startTime,
+    court: m.court,
   }));
 }
 
@@ -396,23 +414,29 @@ app.post("/api/tournament/reset", async (req, res) => {
 // ------------------ ROUND ROBIN ------------------
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
-    const tournamentId = await resolveTournamentId(req);
+    const tournamentId = await getDefaultTournamentId();
     const teams = await getTeamsForTournament(tournamentId);
-
-    if (!teams || teams.length < 2) {
-      return res.status(400).json({
-        error:
-          "Not enough teams. Create doubles teams first (need at least 2).",
-      });
-    }
 
     const gamesPerTeamRaw = req.body?.gamesPerTeam;
     const gamesPerTeam = Number.isFinite(Number(gamesPerTeamRaw))
       ? Number(gamesPerTeamRaw)
       : 4;
 
+    // NEW schedule inputs (optional)
+    const slotMinutesRaw = req.body?.slotMinutes;
+    const slotMinutes = Number.isFinite(Number(slotMinutesRaw))
+      ? Number(slotMinutesRaw)
+      : 20;
+
+    const courtsRaw = req.body?.courts;
+    const courts = Number.isFinite(Number(courtsRaw)) ? Number(courtsRaw) : 4;
+
+    const startTime = parseISODate(req.body?.startTimeISO);
+    const endTime = parseISODate(req.body?.endTimeISO);
+
     const rrMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
 
+    // clear old RR + playoffs
     await pool.query(
       `delete from matches where tournament_id = $1 and phase = 'RR';`,
       [tournamentId]
@@ -422,91 +446,80 @@ app.post("/api/roundrobin/generate", async (req, res) => {
       [tournamentId]
     );
 
-    if (rrMatches.length > 0) {
+    // Build schedule assignments (only if start/end provided)
+    let scheduled = rrMatches.map((m) => ({
+      ...m,
+      startTime: null,
+      court: null,
+    }));
+
+    if (startTime && endTime) {
+      const totalMinutes = minutesBetween(startTime, endTime);
+      const slots = Math.floor(totalMinutes / slotMinutes);
+      const capacity = slots * courts;
+
+      if (rrMatches.length > capacity) {
+        return res.status(409).json({
+          error: `Schedule won't fit: ${rrMatches.length} matches > capacity ${capacity} (${slots} slots × ${courts} courts).`,
+        });
+      }
+
+      // assign sequentially: fill courts each time slot
+      scheduled = rrMatches.map((m, idx) => {
+        const slotIndex = Math.floor(idx / courts); // 0..slots-1
+        const court = (idx % courts) + 1; // 1..courts
+        const st = addMinutes(startTime, slotIndex * slotMinutes);
+        return { ...m, startTime: st.toISOString(), court };
+      });
+    }
+
+    if (scheduled.length > 0) {
       const params = [];
       const chunks = [];
       let i = 1;
 
-      for (const m of rrMatches) {
-        chunks.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++})`);
-        params.push(tournamentId, m.id, "RR", m.teamAId, m.teamBId);
+      for (const m of scheduled) {
+        chunks.push(
+          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
+        );
+        params.push(
+          tournamentId, // 1
+          m.id, // 2 code
+          "RR", // 3 phase
+          m.teamAId, // 4
+          m.teamBId, // 5
+          m.startTime ? m.startTime : null, // 6
+          m.court ? m.court : null // 7
+        );
       }
 
       await pool.query(
         `
-        insert into matches (tournament_id, code, phase, team_a_id, team_b_id)
+        insert into matches (
+          tournament_id, code, phase, team_a_id, team_b_id, start_time, court
+        )
         values ${chunks.join(", ")}
         `,
         params
       );
     }
 
-    res.json({ teams, matches: rrMatches, tournamentId });
+    res.json({
+      teams,
+      matches: scheduled,
+      tournamentId,
+      schedule:
+        startTime && endTime
+          ? {
+              startTimeISO: startTime.toISOString(),
+              endTimeISO: endTime.toISOString(),
+              slotMinutes,
+              courts,
+            }
+          : null,
+    });
   } catch (err) {
     console.error("RR generate error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch("/api/roundrobin/matches/:id/score", async (req, res) => {
-  const { id } = req.params;
-  const { scoreA, scoreB } = req.body;
-
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
-      return res.status(400).json({ error: "Scores must be integers." });
-    }
-    if (scoreA === scoreB) {
-      return res.status(400).json({ error: "Ties not supported." });
-    }
-
-    const matchRes = await pool.query(
-      `
-      select code, team_a_id as "teamAId", team_b_id as "teamBId"
-      from matches
-      where tournament_id = $1 and code = $2 and phase = 'RR'
-      `,
-      [tournamentId, id]
-    );
-
-    if (matchRes.rowCount === 0) {
-      return res.status(404).json({ error: `RR match not found: ${id}` });
-    }
-
-    const matchRow = matchRes.rows[0];
-    const winnerId = scoreA > scoreB ? matchRow.teamAId : matchRow.teamBId;
-
-    const updated = await pool.query(
-      `
-      update matches
-      set score_a = $1, score_b = $2, winner_id = $3
-      where tournament_id = $4 and code = $5 and phase = 'RR'
-      returning
-        code as id,
-        phase,
-        team_a_id as "teamAId",
-        team_b_id as "teamBId",
-        score_a as "scoreA",
-        score_b as "scoreB",
-        winner_id as "winnerId";
-      `,
-      [scoreA, scoreB, winnerId, tournamentId, id]
-    );
-
-    const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
-      "RR",
-    ]);
-    const standings = engine.computeStandings(
-      teams.map((t) => t.id),
-      rrMatches
-    );
-
-    res.json({ match: updated.rows[0], standings });
-  } catch (err) {
-    console.error("RR score error:", err);
     res.status(500).json({ error: err.message });
   }
 });

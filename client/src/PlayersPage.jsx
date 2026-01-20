@@ -54,7 +54,7 @@ function formatDupr(dupr) {
 }
 
 /* -----------------------------
-   Players Page (with Doubles Teams + delete)
+   Players Page (with Doubles Teams + delete + rename + filtering)
 ------------------------------ */
 
 export default function PlayersPage() {
@@ -92,6 +92,13 @@ export default function PlayersPage() {
   // Delete team state
   const [deletingTeamId, setDeletingTeamId] = useState(null);
 
+  // Rename team modal
+  const [openRename, setOpenRename] = useState(false);
+  const [renameTeamId, setRenameTeamId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameStatus, setRenameStatus] = useState("idle"); // idle | saving | error
+  const [renameError, setRenameError] = useState("");
+
   // Generate matches
   const [generateStatus, setGenerateStatus] = useState("idle"); // idle | saving | ok | error
   const [generateError, setGenerateError] = useState("");
@@ -104,7 +111,7 @@ export default function PlayersPage() {
     try {
       setStatus("loading");
 
-      const res = await fetch("/api/players");
+      const res = await fetch(withTid("/api/players"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -177,12 +184,28 @@ export default function PlayersPage() {
   }, [players, query]);
 
   /* -----------------------------
-     Collections for team modal dropdowns
+     Build set of players already assigned to a team
   ------------------------------ */
 
-  const playerOptions = useMemo(() => {
+  const assignedPlayerIds = useMemo(() => {
+    const s = new Set();
+    for (const t of teams ?? []) {
+      for (const p of t.players ?? []) {
+        if (p?.id != null) s.add(String(p.id));
+      }
+    }
+    return s;
+  }, [teams]);
+
+  /* -----------------------------
+     Collections for team modal dropdowns
+     Only show players not already assigned to a doubles team
+  ------------------------------ */
+
+  const playerOptionsBase = useMemo(() => {
     const items = [...players]
       .filter((p) => !p._optimistic)
+      .filter((p) => !assignedPlayerIds.has(String(p.id)))
       .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
       .map((p) => ({
         value: String(p.id),
@@ -192,7 +215,21 @@ export default function PlayersPage() {
       }));
 
     return createListCollection({ items });
-  }, [players]);
+  }, [players, assignedPlayerIds]);
+
+  const playerOptionsA = playerOptionsBase;
+
+  const playerOptionsB = useMemo(() => {
+    const items = playerOptionsBase.items.filter(
+      (opt) => opt.value !== teamAId
+    );
+    return createListCollection({ items });
+  }, [playerOptionsBase, teamAId]);
+
+  // If player 1 changes to match player 2, clear player 2
+  useEffect(() => {
+    if (teamAId && teamBId && teamAId === teamBId) setTeamBId("");
+  }, [teamAId, teamBId]);
 
   const canCreateTeam =
     tid &&
@@ -220,7 +257,7 @@ export default function PlayersPage() {
     }
 
     try {
-      const res = await fetch("/api/players", {
+      const res = await fetch(withTid("/api/players"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, duprRating }),
@@ -243,7 +280,9 @@ export default function PlayersPage() {
     if (!confirm("Delete this player?")) return;
 
     try {
-      const res = await fetch(`/api/players/${id}`, { method: "DELETE" });
+      const res = await fetch(withTid(`/api/players/${id}`), {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       await loadPlayers();
@@ -302,6 +341,56 @@ export default function PlayersPage() {
       console.error(e);
       setCreateTeamStatus("error");
       setCreateTeamError(e.message || "Could not create team.");
+    }
+  }
+
+  /* -----------------------------
+     Rename Team (safe even if matches exist)
+     Assumes backend supports: PATCH /api/teams/:id { name }
+  ------------------------------ */
+
+  function openRenameModal(team) {
+    setRenameError("");
+    setRenameStatus("idle");
+    setRenameTeamId(team?.id ?? null);
+    setRenameValue(team?.name ?? "");
+    setOpenRename(true);
+  }
+
+  async function saveRename() {
+    setRenameError("");
+
+    if (!tid) {
+      setRenameError("No tournament selected.");
+      setRenameStatus("error");
+      return;
+    }
+    const teamId = renameTeamId;
+    const name = renameValue.trim();
+    if (!teamId) return;
+    if (!name) {
+      setRenameError("Team name is required.");
+      setRenameStatus("error");
+      return;
+    }
+
+    setRenameStatus("saving");
+    try {
+      const res = await fetch(withTid(`/api/teams/${teamId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, tournamentId: Number(tid) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to rename team.");
+
+      setOpenRename(false);
+      setRenameStatus("idle");
+      await loadTeams();
+    } catch (e) {
+      console.error(e);
+      setRenameStatus("error");
+      setRenameError(e.message || "Could not rename team.");
     }
   }
 
@@ -697,14 +786,25 @@ export default function PlayersPage() {
                             </Text>
                           </Table.Cell>
                           <Table.Cell textAlign="end">
-                            <IconButton
-                              aria-label="Delete team"
-                              variant="outline"
-                              onClick={() => deleteTeam(t.id)}
-                              disabled={!tid || deletingTeamId === t.id}
-                            >
-                              <Trash2 size={16} />
-                            </IconButton>
+                            <HStack justify="flex-end" gap={2}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openRenameModal(t)}
+                                disabled={!tid}
+                              >
+                                Rename
+                              </Button>
+
+                              <IconButton
+                                aria-label="Delete team"
+                                variant="outline"
+                                onClick={() => deleteTeam(t.id)}
+                                disabled={!tid || deletingTeamId === t.id}
+                              >
+                                <Trash2 size={16} />
+                              </IconButton>
+                            </HStack>
                           </Table.Cell>
                         </Table.Row>
                       ))}
@@ -808,10 +908,10 @@ export default function PlayersPage() {
 
                       <Stack gap={2}>
                         <Text fontSize="sm" fontWeight="700">
-                          Player 1
+                          Player 1 (only unassigned players)
                         </Text>
                         <Select.Root
-                          collection={playerOptions}
+                          collection={playerOptionsA}
                           value={teamAId ? [teamAId] : []}
                           onValueChange={(d) => setTeamAId(d.value?.[0] ?? "")}
                           disabled={!tid || createTeamStatus === "saving"}
@@ -820,7 +920,7 @@ export default function PlayersPage() {
                             <Select.ValueText placeholder="Select player 1" />
                           </Select.Trigger>
                           <Select.Content>
-                            {playerOptions.items.map((opt) => (
+                            {playerOptionsA.items.map((opt) => (
                               <Select.Item key={opt.value} item={opt}>
                                 {opt.label}
                               </Select.Item>
@@ -831,10 +931,10 @@ export default function PlayersPage() {
 
                       <Stack gap={2}>
                         <Text fontSize="sm" fontWeight="700">
-                          Player 2
+                          Player 2 (only unassigned players)
                         </Text>
                         <Select.Root
-                          collection={playerOptions}
+                          collection={playerOptionsB}
                           value={teamBId ? [teamBId] : []}
                           onValueChange={(d) => setTeamBId(d.value?.[0] ?? "")}
                           disabled={!tid || createTeamStatus === "saving"}
@@ -843,7 +943,7 @@ export default function PlayersPage() {
                             <Select.ValueText placeholder="Select player 2" />
                           </Select.Trigger>
                           <Select.Content>
-                            {playerOptions.items.map((opt) => (
+                            {playerOptionsB.items.map((opt) => (
                               <Select.Item key={opt.value} item={opt}>
                                 {opt.label}
                               </Select.Item>
@@ -854,6 +954,12 @@ export default function PlayersPage() {
                         {teamAId && teamBId && teamAId === teamBId ? (
                           <Text fontSize="sm" color="red.600">
                             Pick two different players.
+                          </Text>
+                        ) : null}
+
+                        {playerOptionsBase.items.length === 0 ? (
+                          <Text fontSize="sm" opacity={0.7}>
+                            All players are already assigned to teams.
                           </Text>
                         ) : null}
                       </Stack>
@@ -877,6 +983,70 @@ export default function PlayersPage() {
                         {createTeamStatus === "saving"
                           ? "Creating…"
                           : "Create Team"}
+                      </Button>
+                    </HStack>
+                  </Dialog.Footer>
+                </Dialog.Content>
+              </Dialog.Positioner>
+            </Portal>
+          </Dialog.Root>
+
+          {/* Rename Team Modal */}
+          <Dialog.Root
+            open={openRename}
+            onOpenChange={(e) => setOpenRename(e.open)}
+          >
+            <Portal>
+              <Dialog.Backdrop />
+              <Dialog.Positioner>
+                <Dialog.Content>
+                  <Dialog.Header>
+                    <Dialog.Title>Rename Team</Dialog.Title>
+                  </Dialog.Header>
+
+                  <Dialog.Body>
+                    <Stack gap={3}>
+                      {renameError ? (
+                        <Box
+                          border="1px solid"
+                          borderColor="red.200"
+                          bg="red.50"
+                          borderRadius="lg"
+                          p={3}
+                        >
+                          <Text color="red.700" fontSize="sm">
+                            {renameError}
+                          </Text>
+                        </Box>
+                      ) : null}
+
+                      <Input
+                        placeholder="New team name"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        disabled={renameStatus === "saving"}
+                      />
+                      <Text fontSize="sm" opacity={0.75}>
+                        Renaming is safe even after matches are generated.
+                      </Text>
+                    </Stack>
+                  </Dialog.Body>
+
+                  <Dialog.Footer>
+                    <HStack gap={2}>
+                      <Button
+                        variant="outline"
+                        onClick={() => setOpenRename(false)}
+                        disabled={renameStatus === "saving"}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="pickle"
+                        onClick={saveRename}
+                        disabled={!tid || renameStatus === "saving"}
+                      >
+                        {renameStatus === "saving" ? "Saving…" : "Save"}
                       </Button>
                     </HStack>
                   </Dialog.Footer>

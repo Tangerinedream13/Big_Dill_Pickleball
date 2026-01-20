@@ -5,7 +5,7 @@ const pool = require("../db");
 const router = express.Router();
 
 /* -----------------------------
-   Tournament helpers
+   Helpers
 ------------------------------ */
 
 function parseTournamentId(v) {
@@ -30,33 +30,70 @@ async function resolveTournamentId(req) {
   return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
-/* -----------------------------
-   Name helper (avoid unique constraint collisions)
-   - If you keep teams.name unique globally, this prevents crashes.
-   - If you DROP the teams_name_key constraint, this still works fine.
------------------------------- */
+function normalizeName(s) {
+  return String(s ?? "").trim();
+}
 
-async function makeUniqueTeamName(baseName) {
-  const trimmed = (baseName ?? "").toString().trim();
-  const safeBase = trimmed || "Team";
-
-  for (let i = 0; i < 50; i++) {
-    const candidate = i === 0 ? safeBase : `${safeBase} (${i + 1})`;
-    const exists = await pool.query(
-      `select 1 from teams where name = $1 limit 1;`,
-      [candidate]
-    );
-    if (exists.rowCount === 0) return candidate;
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
+}
 
-  return `${safeBase} (${Date.now()})`;
+function makeTeamName(aName, bName) {
+  return `${aName || "Player A"} / ${bName || "Player B"}`;
+}
+
+/**
+ * Fair DUPR pairing strategy: sort by dupr desc (null last),
+ * then pair top with bottom, next top with next bottom, etc.
+ * Example with 10: [1..10] -> (1,10), (2,9), (3,8)...
+ */
+function pairByDupr(players) {
+  const sorted = [...players].sort((p1, p2) => {
+    const a = p1.duprRating;
+    const b = p2.duprRating;
+
+    const aNull = a === null || a === undefined;
+    const bNull = b === null || b === undefined;
+
+    if (aNull && bNull) return 0;
+    if (aNull) return 1; // nulls last
+    if (bNull) return -1;
+
+    // higher dupr first
+    return Number(b) - Number(a);
+  });
+
+  const pairs = [];
+  let i = 0;
+  let j = sorted.length - 1;
+  while (i < j) {
+    pairs.push([sorted[i], sorted[j]]);
+    i++;
+    j--;
+  }
+  const leftover = i === j ? sorted[i] : null;
+  return { pairs, leftover };
+}
+
+function pairRandom(players) {
+  const copy = [...players];
+  shuffleInPlace(copy);
+
+  const pairs = [];
+  for (let i = 0; i + 1 < copy.length; i += 2) {
+    pairs.push([copy[i], copy[i + 1]]);
+  }
+  const leftover = copy.length % 2 === 1 ? copy[copy.length - 1] : null;
+  return { pairs, leftover };
 }
 
 /* -----------------------------
    GET /api/teams?tournamentId=...
-   Returns: [{ id, name, seed, players: [{id,name,duprRating}] }]
+   Return teams with players
 ------------------------------ */
-
 router.get("/", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
@@ -75,9 +112,7 @@ router.get("/", async (req, res) => {
       [tournamentId]
     );
 
-    if (tRes.rowCount === 0) {
-      return res.json([]);
-    }
+    if (tRes.rowCount === 0) return res.json([]);
 
     const teamIds = tRes.rows.map((t) => t.id);
 
@@ -108,28 +143,26 @@ router.get("/", async (req, res) => {
     }
 
     const out = tRes.rows.map((t) => ({
-      id: t.id,
+      id: String(t.id),
       name: t.name,
       seed: t.seed,
       players: playersByTeam.get(String(t.id)) ?? [],
     }));
 
-    res.json(out);
+    return res.json(out);
   } catch (err) {
     console.error("GET /api/teams error:", err);
-    res.status(500).json({ error: err.message || "Failed to load teams." });
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to load teams." });
   }
 });
 
 /* -----------------------------
    POST /api/teams
-   Body: { tournamentId?, playerAId, playerBId, name? }
-   Creates:
-     - teams row
-     - team_players (2 rows)
-     - tournament_teams link
+   Manual create
+   Body: { tournamentId, playerAId, playerBId, name? }
 ------------------------------ */
-
 router.post("/", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
@@ -154,7 +187,6 @@ router.post("/", async (req, res) => {
       `,
       [tournamentId, [playerAId, playerBId]]
     );
-
     if (inTournament.rowCount !== 2) {
       return res.status(400).json({
         error: "Both players must be signed up for this tournament.",
@@ -196,19 +228,15 @@ router.post("/", async (req, res) => {
 
     // Default team name if not provided
     const pNames = await pool.query(
-      `select id, name from players where id = any($1::bigint[])`,
+      `select id, name, dupr_rating as "duprRating" from players where id = any($1::bigint[])`,
       [[playerAId, playerBId]]
     );
     const nameMap = new Map(pNames.rows.map((r) => [String(r.id), r.name]));
-
-    const defaultName = `${nameMap.get(String(playerAId)) ?? "Player A"} / ${
-      nameMap.get(String(playerBId)) ?? "Player B"
-    }`;
-
-    const rawName = (req.body?.name ?? "").toString().trim() || defaultName;
-
-    // ✅ guarantees no "teams_name_key" crash (even if you forgot to drop it)
-    const teamName = await makeUniqueTeamName(rawName);
+    const defaultName = makeTeamName(
+      nameMap.get(String(playerAId)),
+      nameMap.get(String(playerBId))
+    );
+    const teamName = normalizeName(req.body?.name) || defaultName;
 
     await pool.query("begin");
     try {
@@ -225,7 +253,7 @@ router.post("/", async (req, res) => {
         [teamId, playerAId, playerBId]
       );
 
-      // link team to tournament (seed null for now)
+      // link team to tournament (seed null for manual)
       await pool.query(
         `insert into tournament_teams (tournament_id, team_id) values ($1, $2);`,
         [tournamentId, teamId]
@@ -233,10 +261,9 @@ router.post("/", async (req, res) => {
 
       await pool.query("commit");
 
-      res.status(201).json({
-        id: teamId,
+      return res.status(201).json({
+        id: String(teamId),
         name: teamIns.rows[0].name,
-        seed: null,
         tournamentId,
         players: [
           { id: playerAId, name: nameMap.get(String(playerAId)) ?? "" },
@@ -249,38 +276,31 @@ router.post("/", async (req, res) => {
     }
   } catch (err) {
     console.error("POST /api/teams error:", err);
-
-    // Friendly error for unique constraint collisions, just in case
-    if (err && err.code === "23505") {
-      return res.status(409).json({ error: "Team name already exists." });
-    }
-
-    res.status(500).json({ error: err.message || "Failed to create team." });
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to create team." });
   }
 });
 
 /* -----------------------------
-   DELETE /api/teams/:teamId?tournamentId=...
-   Behavior:
-     - If the team is referenced by matches.team_a_id / team_b_id / winner_id,
-       deletion will fail with a 409 unless you reset/delete those matches first.
-   What we delete:
-     1) tournament_teams link (CASCADE to matches uses tournament_id, but matches FK to teams is RESTRICT)
-     2) team_players rows
-     3) teams row
+   PATCH /api/teams/:id
+   Rename a team (SAFE even if matches exist)
+   Body: { tournamentId?, name }
 ------------------------------ */
-
-router.delete("/:teamId", async (req, res) => {
-  const teamId = Number(req.params.teamId);
-
+router.patch("/:id", async (req, res) => {
   try {
+    const tournamentId = await resolveTournamentId(req);
+    const teamId = Number(req.params.id);
+    const name = (req.body?.name ?? "").toString().trim();
+
     if (!Number.isInteger(teamId) || teamId <= 0) {
       return res.status(400).json({ error: "Invalid team id." });
     }
+    if (!name) {
+      return res.status(400).json({ error: "Team name is required." });
+    }
 
-    const tournamentId = await resolveTournamentId(req);
-
-    // Make sure this team belongs to this tournament
+    // Ensure this team belongs to this tournament
     const belongs = await pool.query(
       `
       select 1
@@ -297,8 +317,213 @@ router.delete("/:teamId", async (req, res) => {
         .json({ error: "Team not found for this tournament." });
     }
 
-    // If matches reference this team, deletion will violate FK constraints
-    const usedInMatches = await pool.query(
+    // Rename the team (safe even if matches exist)
+    const updated = await pool.query(
+      `
+      update teams
+      set name = $1
+      where id = $2
+      returning id, name;
+      `,
+      [name, teamId]
+    );
+
+    return res.json({ ok: true, team: updated.rows[0], tournamentId });
+  } catch (err) {
+    console.error("PATCH /api/teams/:id error:", err);
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to rename team." });
+  }
+});
+
+/* -----------------------------
+   POST /api/teams/generate
+   Auto-generate doubles teams from tournament players
+
+   Body:
+   {
+     tournamentId?: number,
+     strategy?: "dupr" | "random",
+     force?: boolean   // if true, delete existing tournament teams first (ONLY if no matches exist)
+   }
+
+   Notes:
+   - If matches already exist, we block generation (409) to avoid FK issues.
+   - If existing teams exist and force is not true, we block (409).
+------------------------------ */
+router.post("/generate", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+    const strategy = (req.body?.strategy ?? "dupr").toString().toLowerCase();
+    const force = Boolean(req.body?.force);
+
+    // 1) If matches exist, don't allow team regeneration
+    const matchesRes = await pool.query(
+      `
+      select 1
+      from matches
+      where tournament_id = $1
+      limit 1;
+      `,
+      [tournamentId]
+    );
+    if (matchesRes.rowCount > 0) {
+      return res.status(409).json({
+        error:
+          "Matches already exist for this tournament. Reset matches before generating teams.",
+      });
+    }
+
+    // 2) See if tournament already has teams
+    const existingTeamsRes = await pool.query(
+      `select team_id from tournament_teams where tournament_id = $1;`,
+      [tournamentId]
+    );
+
+    if (existingTeamsRes.rowCount > 0 && !force) {
+      return res.status(409).json({
+        error:
+          "Teams already exist for this tournament. Delete teams (or use force:true) before generating.",
+      });
+    }
+
+    // 3) Load players who are signed up for this tournament
+    const playersRes = await pool.query(
+      `
+      select p.id, p.name, p.dupr_rating as "duprRating"
+      from tournament_players tp
+      join players p on p.id = tp.player_id
+      where tp.tournament_id = $1
+      order by p.id asc;
+      `,
+      [tournamentId]
+    );
+
+    const players = playersRes.rows.map((r) => ({
+      id: Number(r.id),
+      name: r.name,
+      duprRating: r.duprRating,
+    }));
+
+    if (players.length < 2) {
+      return res.status(400).json({
+        error: "Need at least 2 players signed up to generate doubles teams.",
+      });
+    }
+
+    // 4) Pair them
+    let pairs, leftover;
+    if (strategy === "random") {
+      ({ pairs, leftover } = pairRandom(players));
+    } else {
+      ({ pairs, leftover } = pairByDupr(players));
+    }
+
+    if (pairs.length === 0) {
+      return res.status(400).json({
+        error: "Not enough players to form teams.",
+      });
+    }
+
+    await pool.query("begin");
+    try {
+      // If force: delete existing tournament_teams and related team_players/teams
+      // (matches already checked = none)
+      if (existingTeamsRes.rowCount > 0 && force) {
+        const teamIds = existingTeamsRes.rows.map((r) => r.team_id);
+
+        await pool.query(
+          `delete from tournament_teams where tournament_id = $1;`,
+          [tournamentId]
+        );
+
+        await pool.query(
+          `delete from team_players where team_id = any($1::bigint[]);`,
+          [teamIds]
+        );
+
+        await pool.query(`delete from teams where id = any($1::bigint[]);`, [
+          teamIds,
+        ]);
+      }
+
+      const createdTeams = [];
+
+      // Create teams for each pair
+      for (let idx = 0; idx < pairs.length; idx++) {
+        const [a, b] = pairs[idx];
+
+        const teamName = makeTeamName(a.name, b.name);
+
+        const teamIns = await pool.query(
+          `insert into teams (name) values ($1) returning id, name;`,
+          [teamName]
+        );
+        const teamId = teamIns.rows[0].id;
+
+        await pool.query(
+          `insert into team_players (team_id, player_id) values ($1,$2), ($1,$3);`,
+          [teamId, a.id, b.id]
+        );
+
+        await pool.query(
+          `insert into tournament_teams (tournament_id, team_id, seed) values ($1, $2, $3);`,
+          [tournamentId, teamId, idx + 1]
+        );
+
+        createdTeams.push({
+          id: String(teamId),
+          name: teamIns.rows[0].name,
+          seed: idx + 1,
+          players: [
+            { id: a.id, name: a.name, duprRating: a.duprRating },
+            { id: b.id, name: b.name, duprRating: b.duprRating },
+          ],
+        });
+      }
+
+      await pool.query("commit");
+
+      return res.status(201).json({
+        tournamentId,
+        strategy,
+        teamsCreated: createdTeams.length,
+        leftoverPlayer: leftover
+          ? {
+              id: leftover.id,
+              name: leftover.name,
+              duprRating: leftover.duprRating,
+            }
+          : null,
+        teams: createdTeams,
+      });
+    } catch (e) {
+      await pool.query("rollback");
+      throw e;
+    }
+  } catch (err) {
+    console.error("POST /api/teams/generate error:", err);
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to generate teams." });
+  }
+});
+
+/* -----------------------------
+   DELETE /api/teams/:id
+   Deletes a team ONLY if it is not referenced by matches.
+------------------------------ */
+router.delete("/:id", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+    const teamId = Number(req.params.id);
+    if (!Number.isInteger(teamId) || teamId <= 0) {
+      return res.status(400).json({ error: "Invalid team id." });
+    }
+
+    // If referenced by matches, block
+    const used = await pool.query(
       `
       select 1
       from matches
@@ -308,46 +533,48 @@ router.delete("/:teamId", async (req, res) => {
       `,
       [tournamentId, teamId]
     );
-
-    if (usedInMatches.rowCount > 0) {
+    if (used.rowCount > 0) {
       return res.status(409).json({
         error:
-          "This team is used in matches. Reset/delete matches for this tournament before deleting the team.",
+          "That team is used in matches. Reset matches before deleting the team.",
       });
     }
 
     await pool.query("begin");
     try {
+      // remove tournament link first
       await pool.query(
         `delete from tournament_teams where tournament_id = $1 and team_id = $2;`,
         [tournamentId, teamId]
       );
 
+      // remove team_players
       await pool.query(`delete from team_players where team_id = $1;`, [
         teamId,
       ]);
 
-      await pool.query(`delete from teams where id = $1;`, [teamId]);
+      // remove team
+      const del = await pool.query(
+        `delete from teams where id = $1 returning id;`,
+        [teamId]
+      );
 
       await pool.query("commit");
+
+      if (del.rowCount === 0) {
+        return res.status(404).json({ error: "Team not found." });
+      }
+
+      return res.json({ ok: true, id: teamId, tournamentId });
     } catch (e) {
       await pool.query("rollback");
       throw e;
     }
-
-    res.json({ ok: true, teamId, tournamentId });
   } catch (err) {
-    console.error("DELETE /api/teams/:teamId error:", err);
-
-    // FK violation
-    if (err && err.code === "23503") {
-      return res.status(409).json({
-        error:
-          "Could not delete team due to related records (matches). Reset/delete matches first.",
-      });
-    }
-
-    res.status(500).json({ error: err.message || "Failed to delete team." });
+    console.error("DELETE /api/teams/:id error:", err);
+    return res
+      .status(500)
+      .json({ error: err.message || "Failed to delete team." });
   }
 });
 

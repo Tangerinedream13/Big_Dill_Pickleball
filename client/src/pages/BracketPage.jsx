@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -11,6 +12,7 @@ import {
   Text,
   Input,
 } from "@chakra-ui/react";
+import { ArrowLeft } from "lucide-react";
 
 import { getCurrentTournamentId } from "../tournamentStore";
 
@@ -19,6 +21,8 @@ function teamNameById(teams, id) {
 }
 
 export default function BracketPage() {
+  const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState({
     teams: [],
@@ -30,12 +34,11 @@ export default function BracketPage() {
   const [error, setError] = useState("");
 
   // quick inline scoring UI
-  const [scoreDraft, setScoreDraft] = useState({}); // key: matchId -> {a,b}
+  const [scoreDraft, setScoreDraft] = useState({}); // matchId -> { a, b }
 
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
-    // Always build from origin so relative paths work consistently
     const u = new URL(path, window.location.origin);
     if (tid) u.searchParams.set("tournamentId", tid);
     return u.pathname + u.search;
@@ -67,9 +70,7 @@ export default function BracketPage() {
     }
   }
 
-  // Re-fetch when tournament changes
   useEffect(() => {
-    // When switching tournaments, clear score drafts so you don’t carry old inputs over
     setScoreDraft({});
     fetchState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,43 +108,24 @@ export default function BracketPage() {
     await runAction(async () => {
       if (!tid) throw new Error("No tournament selected.");
 
-      if (phase === "RR") {
-        const res = await fetch(
-          withTid(`/api/roundrobin/matches/${matchId}/score`),
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ scoreA, scoreB }),
-          }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(data?.error || "Failed to submit RR score");
-      } else if (phase === "SF") {
-        const res = await fetch(
-          withTid(`/api/playoffs/semis/${matchId}/score`),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ scoreA, scoreB }),
-          }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(data?.error || "Failed to submit SF score");
-      } else {
-        const res = await fetch(
-          withTid(`/api/playoffs/finals/${matchId}/score`),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ scoreA, scoreB }),
-          }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(data?.error || "Failed to submit finals score");
-      }
+      const endpoint =
+        phase === "RR"
+          ? `/api/roundrobin/matches/${matchId}/score`
+          : phase === "SF"
+          ? `/api/playoffs/semis/${matchId}/score`
+          : `/api/playoffs/finals/${matchId}/score`;
+
+      const method = phase === "RR" ? "PATCH" : "POST";
+
+      const res = await fetch(withTid(endpoint), {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scoreA, scoreB }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(data?.error || "Failed to submit score");
     });
   }
 
@@ -151,15 +133,16 @@ export default function BracketPage() {
 
   return (
     <Container maxW="6xl" py={8}>
+      {/* HEADER */}
       <HStack mb={6}>
         <Heading size="lg">Tournament Brackets</Heading>
         <Spacer />
+
         <HStack>
           <Button
             onClick={() =>
               runAction(async () => {
                 if (!tid) throw new Error("No tournament selected.");
-
                 const res = await fetch(withTid("/api/roundrobin/generate"), {
                   method: "POST",
                 });
@@ -177,7 +160,6 @@ export default function BracketPage() {
             onClick={() =>
               runAction(async () => {
                 if (!tid) throw new Error("No tournament selected.");
-
                 const res = await fetch(withTid("/api/playoffs/generate"), {
                   method: "POST",
                 });
@@ -195,7 +177,6 @@ export default function BracketPage() {
             onClick={() =>
               runAction(async () => {
                 if (!tid) throw new Error("No tournament selected.");
-
                 const res = await fetch(withTid("/api/tournament/reset"), {
                   method: "POST",
                 });
@@ -206,16 +187,24 @@ export default function BracketPage() {
           >
             Reset
           </Button>
+
+          {/* ✅ BACK BUTTON */}
+          <Button variant="outline" onClick={() => navigate("/")}>
+            <HStack gap={2}>
+              <ArrowLeft size={16} />
+              <Text>Back</Text>
+            </HStack>
+          </Button>
         </HStack>
       </HStack>
 
-      {error ? (
+      {error && (
         <Box mb={4} p={3} borderWidth="1px" rounded="md">
           <Text>{error}</Text>
         </Box>
-      ) : null}
+      )}
 
-      {loading && state.teams.length === 0 ? <Text>Loading…</Text> : null}
+      {loading && state.teams.length === 0 && <Text>Loading…</Text>}
 
       <Tabs.Root defaultValue="rr">
         <Tabs.List>
@@ -224,12 +213,11 @@ export default function BracketPage() {
           <Tabs.Trigger value="playoffs">Playoffs</Tabs.Trigger>
         </Tabs.List>
 
+        {/* RR */}
         <Tabs.Content value="rr">
           <Stack mt={4} gap={3}>
             {state.rrMatches.length === 0 ? (
-              <Text color="gray.500">
-                No RR matches yet. Click “Generate RR”.
-              </Text>
+              <Text color="gray.500">No RR matches yet.</Text>
             ) : (
               state.rrMatches.map((m) => {
                 const draft = scoreDraft[m.id] || { a: "", b: "" };
@@ -237,26 +225,29 @@ export default function BracketPage() {
                   <Box key={m.id} borderWidth="1px" rounded="md" p={3}>
                     <Text mb={2}>
                       <b>{teamNameById(teams, m.teamAId)}</b> vs{" "}
-                      <b>{teamNameById(teams, m.teamBId)}</b>{" "}
-                      {m.scoreA != null && m.scoreB != null
-                        ? `— ${m.scoreA}:${m.scoreB}`
-                        : ""}
+                      <b>{teamNameById(teams, m.teamBId)}</b>
                     </Text>
-
                     <HStack>
                       <Input
                         placeholder="Score A"
                         value={draft.a}
-                        onChange={(e) => setDraft(m.id, "a", e.target.value)}
+                        onChange={(e) =>
+                          setDraft(m.id, "a", e.target.value)
+                        }
                         width="120px"
                       />
                       <Input
                         placeholder="Score B"
                         value={draft.b}
-                        onChange={(e) => setDraft(m.id, "b", e.target.value)}
+                        onChange={(e) =>
+                          setDraft(m.id, "b", e.target.value)
+                        }
                         width="120px"
                       />
-                      <Button size="sm" onClick={() => submitScore("RR", m.id)}>
+                      <Button
+                        size="sm"
+                        onClick={() => submitScore("RR", m.id)}
+                      >
                         Save
                       </Button>
                     </HStack>
@@ -267,6 +258,7 @@ export default function BracketPage() {
           </Stack>
         </Tabs.Content>
 
+        {/* STANDINGS */}
         <Tabs.Content value="standings">
           <Stack mt={4} gap={2}>
             {state.standings.map((s, idx) => (
@@ -280,101 +272,49 @@ export default function BracketPage() {
           </Stack>
         </Tabs.Content>
 
+        {/* PLAYOFFS */}
         <Tabs.Content value="playoffs">
           <Stack mt={4} gap={4}>
-            <Box>
-              <Heading size="md" mb={2}>
-                Semifinals
-              </Heading>
-
-              {state.semis.length === 0 ? (
-                <Text color="gray.500">Generate playoffs after RR.</Text>
-              ) : (
-                state.semis.map((m) => {
-                  const draft = scoreDraft[m.id] || { a: "", b: "" };
-                  return (
-                    <Box key={m.id} borderWidth="1px" rounded="md" p={3}>
-                      <Text mb={2}>
-                        <b>{teamNameById(teams, m.teamAId)}</b> vs{" "}
-                        <b>{teamNameById(teams, m.teamBId)}</b>{" "}
-                        {m.scoreA != null && m.scoreB != null
-                          ? `— ${m.scoreA}:${m.scoreB}`
-                          : ""}
-                      </Text>
-
-                      <HStack>
-                        <Input
-                          placeholder="Score A"
-                          value={draft.a}
-                          onChange={(e) => setDraft(m.id, "a", e.target.value)}
-                          width="120px"
-                        />
-                        <Input
-                          placeholder="Score B"
-                          value={draft.b}
-                          onChange={(e) => setDraft(m.id, "b", e.target.value)}
-                          width="120px"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => submitScore("SF", m.id)}
-                        >
-                          Save
-                        </Button>
-                      </HStack>
-                    </Box>
-                  );
-                })
-              )}
-            </Box>
-
-            <Box>
-              <Heading size="md" mb={2}>
-                Finals / Third
-              </Heading>
-
-              {state.finals.length === 0 ? (
-                <Text color="gray.500">
-                  Finals appear after both semis are scored.
-                </Text>
-              ) : (
-                state.finals.map((m) => {
-                  const draft = scoreDraft[m.id] || { a: "", b: "" };
-                  return (
-                    <Box key={m.id} borderWidth="1px" rounded="md" p={3}>
-                      <Text mb={2}>
-                        <b>{teamNameById(teams, m.teamAId)}</b> vs{" "}
-                        <b>{teamNameById(teams, m.teamBId)}</b>{" "}
-                        {m.scoreA != null && m.scoreB != null
-                          ? `— ${m.scoreA}:${m.scoreB}`
-                          : ""}
-                      </Text>
-
-                      <HStack>
-                        <Input
-                          placeholder="Score A"
-                          value={draft.a}
-                          onChange={(e) => setDraft(m.id, "a", e.target.value)}
-                          width="120px"
-                        />
-                        <Input
-                          placeholder="Score B"
-                          value={draft.b}
-                          onChange={(e) => setDraft(m.id, "b", e.target.value)}
-                          width="120px"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => submitScore("FINAL", m.id)}
-                        >
-                          Save
-                        </Button>
-                      </HStack>
-                    </Box>
-                  );
-                })
-              )}
-            </Box>
+            {[...state.semis, ...state.finals].map((m) => {
+              const draft = scoreDraft[m.id] || { a: "", b: "" };
+              return (
+                <Box key={m.id} borderWidth="1px" rounded="md" p={3}>
+                  <Text mb={2}>
+                    <b>{teamNameById(teams, m.teamAId)}</b> vs{" "}
+                    <b>{teamNameById(teams, m.teamBId)}</b>
+                  </Text>
+                  <HStack>
+                    <Input
+                      placeholder="Score A"
+                      value={draft.a}
+                      onChange={(e) =>
+                        setDraft(m.id, "a", e.target.value)
+                      }
+                      width="120px"
+                    />
+                    <Input
+                      placeholder="Score B"
+                      value={draft.b}
+                      onChange={(e) =>
+                        setDraft(m.id, "b", e.target.value)
+                      }
+                      width="120px"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        submitScore(
+                          state.semis.includes(m) ? "SF" : "FINAL",
+                          m.id
+                        )
+                      }
+                    >
+                      Save
+                    </Button>
+                  </HStack>
+                </Box>
+              );
+            })}
           </Stack>
         </Tabs.Content>
       </Tabs.Root>

@@ -18,8 +18,12 @@ import {
 } from "@chakra-ui/react";
 import { Plus, Search, Trash2, UserRound, ArrowLeft } from "lucide-react";
 
-// If backend already returns duprTier, we’ll use it.
-// But keep a fallback just in case.
+import { consumeOptimisticPlayer } from "./optimisticPlayerStore";
+
+/* -----------------------------
+   DUPR helpers
+------------------------------ */
+
 function duprTierFromNumber(dupr) {
   const n = Number(dupr);
   if (!Number.isFinite(n)) return "Unrated";
@@ -37,6 +41,10 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+/* -----------------------------
+   Players Page
+------------------------------ */
+
 export default function PlayersPage() {
   const navigate = useNavigate();
 
@@ -47,15 +55,34 @@ export default function PlayersPage() {
   // Modal state
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDupr, setNewDupr] = useState(""); // string for the input
+  const [newDupr, setNewDupr] = useState("");
+
+  /* -----------------------------
+     Load players + optimistic merge
+  ------------------------------ */
 
   async function loadPlayers() {
     try {
       setStatus("loading");
+
       const res = await fetch("/api/players");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const data = await res.json();
-      setPlayers(Array.isArray(data) ? data : data.players ?? []);
+      const serverPlayers = Array.isArray(data) ? data : data.players ?? [];
+
+      const optimistic = consumeOptimisticPlayer();
+      if (optimistic) {
+        setPlayers([
+          { ...optimistic, _optimistic: true },
+          ...serverPlayers.filter(
+            (p) => p.email?.toLowerCase() !== optimistic.email?.toLowerCase()
+          ),
+        ]);
+      } else {
+        setPlayers(serverPlayers);
+      }
+
       setStatus("ok");
     } catch (e) {
       console.error(e);
@@ -67,30 +94,29 @@ export default function PlayersPage() {
     loadPlayers();
   }, []);
 
-  // Search ONLY by name or DUPR (no email, no level)
+  /* -----------------------------
+     Search (name or DUPR)
+  ------------------------------ */
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return players;
 
     return players.filter((p) => {
       const name = (p.name ?? "").toLowerCase();
-
-      // backend returns duprRating; but allow fallback if older data uses dupr_rating/dupr
-      const duprVal =
-        p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
-
-      const duprStr =
-        duprVal === null || duprVal === undefined ? "" : String(duprVal).toLowerCase();
-
-      return name.includes(q) || duprStr.includes(q);
+      const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? "";
+      return name.includes(q) || String(duprVal).toLowerCase().includes(q);
     });
   }, [players, query]);
+
+  /* -----------------------------
+     Create / Delete players
+  ------------------------------ */
 
   async function createPlayer() {
     const name = newName.trim();
     if (!name) return;
 
-    // Allow blank DUPR (optional)
     let duprRating = null;
     if (newDupr.trim() !== "") {
       const n = Number(newDupr);
@@ -105,12 +131,11 @@ export default function PlayersPage() {
       const res = await fetch("/api/players", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ✅ match backend: { name, duprRating }
         body: JSON.stringify({ name, duprRating }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(data?.error);
 
       setNewName("");
       setNewDupr("");
@@ -118,7 +143,7 @@ export default function PlayersPage() {
       await loadPlayers();
     } catch (e) {
       console.error(e);
-      alert(e.message || "Could not create player. Check console + API route.");
+      alert(e.message || "Could not create player.");
     }
   }
 
@@ -126,15 +151,21 @@ export default function PlayersPage() {
     if (!confirm("Delete this player?")) return;
 
     try {
-      const res = await fetch(`/api/players/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/players/${id}`, {
+        method: "DELETE",
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(data?.error);
       await loadPlayers();
     } catch (e) {
       console.error(e);
-      alert(e.message || "Could not delete player. Check console + API route.");
+      alert(e.message || "Could not delete player.");
     }
   }
+
+  /* -----------------------------
+     UI
+  ------------------------------ */
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
@@ -149,16 +180,6 @@ export default function PlayersPage() {
           >
             <Stack gap={2}>
               <HStack gap={3} wrap="wrap">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate("/")}
-                >
-                  <HStack gap={2}>
-                    <ArrowLeft size={16} />
-                    <Text>Back to Landing</Text>
-                  </HStack>
-                </Button>
-
                 <Box
                   w="36px"
                   h="36px"
@@ -166,30 +187,23 @@ export default function PlayersPage() {
                   bg="club.100"
                   display="grid"
                   placeItems="center"
-                  border="1px solid"
-                  borderColor="border"
                 >
                   <UserRound size={18} />
                 </Box>
 
-                <Heading size="lg" letterSpacing="-0.02em">
-                  Players
-                </Heading>
+                <Heading size="lg">Players</Heading>
 
                 <Badge variant="pickle">{players.length} total</Badge>
-
                 {status === "loading" && <Badge variant="club">Loading…</Badge>}
-                {status === "error" && <Badge variant="club">Backend issue</Badge>}
               </HStack>
 
-              <Text opacity={0.85} maxW="75ch">
-                Manage your player roster. Search by <b>name</b> or <b>DUPR</b>.
-                DUPR tiers: Beginner (2.0–2.99), Intermediate (3.0–3.99), Advanced
-                (4.0–4.99), Elite (5.0+).
+              <Text opacity={0.85}>
+                Search by <b>name</b> or <b>DUPR</b>.
               </Text>
             </Stack>
 
-            <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+            {/* Right actions */}
+            <HStack gap={2} wrap="wrap">
               <Box position="relative" w={{ base: "100%", md: "320px" }}>
                 <Box
                   position="absolute"
@@ -214,87 +228,81 @@ export default function PlayersPage() {
                   <Text>New Player</Text>
                 </HStack>
               </Button>
+
+              {/* ✅ Back button (right of New Player) */}
+              <Button variant="outline" onClick={() => navigate("/")}>
+                <HStack gap={2}>
+                  <ArrowLeft size={16} />
+                  <Text>Back</Text>
+                </HStack>
+              </Button>
             </HStack>
           </Flex>
 
-          {/* Main panel (NO Card.Root to avoid white screen) */}
+          {/* Table */}
           <Box
             bg="white"
             border="1px solid"
             borderColor="border"
             borderRadius="2xl"
-            boxShadow="soft"
-            overflow="hidden"
           >
-            <Box p={{ base: 4, md: 5 }}>
-              {filtered.length === 0 ? (
-                <Box
-                  border="1px dashed"
-                  borderColor="border"
-                  borderRadius="2xl"
-                  p={{ base: 6, md: 10 }}
-                  textAlign="center"
-                  bg="cream.50"
-                >
-                  <Heading size="md" mb={2}>
-                    No players found
-                  </Heading>
-                  <Text opacity={0.8} mb={5}>
-                    Try a different search, or add your first player.
-                  </Text>
-                  <Button variant="pickle" onClick={() => setOpen(true)}>
-                    Add Player
-                  </Button>
-                </Box>
-              ) : (
-                <Box overflowX="auto">
-                  <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Name</Table.ColumnHeader>
-                        <Table.ColumnHeader>DUPR</Table.ColumnHeader>
-                        <Table.ColumnHeader>Tier</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
+            <Box p={5}>
+              <Table.Root variant="outline">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeader>Name</Table.ColumnHeader>
+                    <Table.ColumnHeader>DUPR</Table.ColumnHeader>
+                    <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                    <Table.ColumnHeader textAlign="end">
+                      Actions
+                    </Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+
+                <Table.Body>
+                  {filtered.map((p) => {
+                    const duprVal =
+                      p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
+                    const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+
+                    return (
+                      <Table.Row
+                        key={p.id ?? p.email ?? p.name}
+                        bg={p._optimistic ? "green.50" : undefined}
+                      >
+                        <Table.Cell fontWeight="600">
+                          {p.name}
+                          {p._optimistic && (
+                            <Badge ml={2} colorScheme="green">
+                              Just joined
+                            </Badge>
+                          )}
+                        </Table.Cell>
+
+                        <Table.Cell>
+                          <Badge>{formatDupr(duprVal)}</Badge>
+                        </Table.Cell>
+
+                        <Table.Cell>
+                          <Badge>{tier}</Badge>
+                        </Table.Cell>
+
+                        <Table.Cell textAlign="end">
+                          {!p._optimistic && (
+                            <IconButton
+                              aria-label="Delete"
+                              variant="outline"
+                              onClick={() => deletePlayer(p.id)}
+                            >
+                              <Trash2 size={16} />
+                            </IconButton>
+                          )}
+                        </Table.Cell>
                       </Table.Row>
-                    </Table.Header>
-
-                    <Table.Body>
-                      {filtered.map((p) => {
-                        const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
-                        const tier = p.duprTier ?? duprTierFromNumber(duprVal);
-
-                        return (
-                          <Table.Row key={p.id ?? p.name}>
-                            <Table.Cell fontWeight="600">
-                              {p.name ?? "Unnamed"}
-                            </Table.Cell>
-
-                            <Table.Cell>
-                              <Badge variant="club">{formatDupr(duprVal)}</Badge>
-                            </Table.Cell>
-
-                            <Table.Cell>
-                              <Badge variant="club">{tier}</Badge>
-                            </Table.Cell>
-
-                            <Table.Cell textAlign="end">
-                              <IconButton
-                                aria-label="Delete player"
-                                variant="outline"
-                                onClick={() => deletePlayer(p.id)}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </Table.Cell>
-                          </Table.Row>
-                        );
-                      })}
-                    </Table.Body>
-                  </Table.Root>
-                </Box>
-              )}
+                    );
+                  })}
+                </Table.Body>
+              </Table.Root>
             </Box>
           </Box>
 
@@ -310,54 +318,26 @@ export default function PlayersPage() {
 
                   <Dialog.Body>
                     <Stack gap={3}>
-                      <Text opacity={0.8}>
-                        Add a new player to your roster.
-                      </Text>
-
-                      <Stack gap={2}>
-                        <Text fontSize="sm" fontWeight="600">
-                          Player name
-                        </Text>
-                        <Input
-                          placeholder="ex: John Smith"
-                          value={newName}
-                          onChange={(e) => setNewName(e.target.value)}
-                        />
-                      </Stack>
-
-                      <Stack gap={2}>
-                        <HStack justify="space-between" wrap="wrap">
-                          <Text fontSize="sm" fontWeight="600">
-                            DUPR rating
-                          </Text>
-                          <Text fontSize="xs" opacity={0.75}>
-                            Beginner 2.0–2.99 • Intermediate 3.0–3.99 • Advanced
-                            4.0–4.99 • Elite 5.0+
-                          </Text>
-                        </HStack>
-
-                        <Input
-                          placeholder="ex: 3.25 (optional)"
-                          inputMode="decimal"
-                          value={newDupr}
-                          onChange={(e) => setNewDupr(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") createPlayer();
-                          }}
-                        />
-                      </Stack>
+                      <Input
+                        placeholder="Player name"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                      />
+                      <Input
+                        placeholder="DUPR (optional)"
+                        value={newDupr}
+                        onChange={(e) => setNewDupr(e.target.value)}
+                      />
                     </Stack>
                   </Dialog.Body>
 
                   <Dialog.Footer>
-                    <HStack gap={2}>
-                      <Button variant="outline" onClick={() => setOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button variant="pickle" onClick={createPlayer}>
-                        Create
-                      </Button>
-                    </HStack>
+                    <Button variant="outline" onClick={() => setOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="pickle" onClick={createPlayer}>
+                      Create
+                    </Button>
                   </Dialog.Footer>
                 </Dialog.Content>
               </Dialog.Positioner>

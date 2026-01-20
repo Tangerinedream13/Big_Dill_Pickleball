@@ -289,7 +289,7 @@ export default function MatchSchedule() {
             <Button variant="outline" onClick={() => navigate("/")}>
               <HStack gap={2}>
                 <ArrowLeft size={16} />
-                <Text>Back to Landing</Text>
+                <Text>Back</Text>
               </HStack>
             </Button>
           </Flex>

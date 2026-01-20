@@ -15,7 +15,7 @@ import {
   Select,
   Table,
 } from "@chakra-ui/react";
-import { ArrowLeft, Save, Search, CalendarDays } from "lucide-react";
+import { ArrowLeft, Save, Search, CalendarDays, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
 function labelForPhase(phase) {
@@ -52,6 +52,10 @@ export default function MatchSchedule() {
   // { [matchId]: { scoreA: string, scoreB: string, saving: boolean, error: string|null } }
   const [edits, setEdits] = useState({});
 
+  // reset matches state
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState("");
+
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
@@ -63,9 +67,9 @@ export default function MatchSchedule() {
   async function loadState() {
     try {
       setStatus("loading");
+      setResetError("");
 
       if (!tid) {
-        // No selected tournament => not a backend failure
         setState(null);
         setEdits({});
         setStatus("no-tournament");
@@ -105,7 +109,6 @@ export default function MatchSchedule() {
   }
 
   useEffect(() => {
-    // When switching tournaments, clear out old UI state immediately
     setState(null);
     setEdits({});
     loadState();
@@ -238,6 +241,36 @@ export default function MatchSchedule() {
     }
   }
 
+  async function resetMatches() {
+    setResetError("");
+
+    if (!tid) {
+      setResetError("No tournament selected.");
+      return;
+    }
+    if (
+      !confirm("Reset ALL matches for this tournament? This cannot be undone.")
+    ) {
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const res = await fetch(withTid("/api/tournament/reset"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      await loadState();
+    } catch (e) {
+      console.error(e);
+      setResetError(e.message || "Could not reset matches.");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
       <Container maxW="6xl">
@@ -281,18 +314,46 @@ export default function MatchSchedule() {
               </HStack>
 
               <Text opacity={0.85} maxW="70ch">
-                Enter scores for round robin and playoffs. Once finals are
-                scored, semis are locked (reset playoffs to change).
+                Enter scores for round robin and playoffs. Tip: use{" "}
+                <b>Reset Matches</b> if you need to rename/delete teams or
+                regenerate teams.
               </Text>
             </Stack>
 
-            <Button variant="outline" onClick={() => navigate("/")}>
-              <HStack gap={2}>
-                <ArrowLeft size={16} />
-                <Text>Back</Text>
-              </HStack>
-            </Button>
+            <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+              <Button
+                variant="outline"
+                onClick={resetMatches}
+                disabled={!tid || resetting}
+              >
+                <HStack gap={2}>
+                  <RotateCcw size={16} />
+                  <Text>{resetting ? "Resetting…" : "Reset Matches"}</Text>
+                </HStack>
+              </Button>
+
+              <Button variant="outline" onClick={() => navigate("/")}>
+                <HStack gap={2}>
+                  <ArrowLeft size={16} />
+                  <Text>Back</Text>
+                </HStack>
+              </Button>
+            </HStack>
           </Flex>
+
+          {resetError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {resetError}
+              </Text>
+            </Box>
+          ) : null}
 
           {/* Controls */}
           <Card.Root>

@@ -1,5 +1,4 @@
-// backend/routes/signup.js  (CommonJS to match server.js)
-
+// backend/routes/signup.js
 const express = require("express");
 
 module.exports = function signupRoutes(pool) {
@@ -8,60 +7,89 @@ module.exports = function signupRoutes(pool) {
   // POST /api/tournaments/:id/signup
   // Body: { name, email, duprRating }
   router.post("/tournaments/:id/signup", async (req, res) => {
-    const tournamentId = String(req.params.id);
+    const tournamentId = Number(req.params.id);
     const { name, email, duprRating } = req.body ?? {};
 
     const trimmedName = String(name ?? "").trim();
     const trimmedEmail = String(email ?? "").trim().toLowerCase();
-
-    // allow blank dupr => null
-    const duprRaw = String(duprRating ?? "").trim();
-    const duprNum = duprRaw === "" ? null : Number(duprRaw);
+    const trimmedDupr = String(duprRating ?? "").trim();
 
     if (!trimmedName) {
       return res.status(400).json({ error: "Name is required." });
     }
+
     if (!trimmedEmail || !trimmedEmail.includes("@")) {
       return res.status(400).json({ error: "Valid email is required." });
     }
-    if (!tournamentId) {
-      return res.status(400).json({ error: "Tournament id is required." });
+
+    if (!Number.isInteger(tournamentId)) {
+      return res.status(400).json({ error: "Valid tournament id is required." });
     }
-    if (duprNum !== null && (!Number.isFinite(duprNum) || duprNum < 2.0 || duprNum > 6.99)) {
+
+    // DUPR: allow blank, otherwise must be numeric
+    const duprNum =
+      trimmedDupr === "" ? null : Number(trimmedDupr);
+
+    if (trimmedDupr !== "" && !Number.isFinite(duprNum)) {
       return res
         .status(400)
-        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+        .json({ error: "DUPR must be a number (or blank)." });
     }
 
     try {
-      // Ensure tournament exists
-      const t = await pool.query("select id from tournaments where id = $1", [
-        tournamentId,
-      ]);
+      // 1️⃣ Ensure tournament exists
+      const t = await pool.query(
+        "select id from tournaments where id = $1",
+        [tournamentId]
+      );
+
       if (t.rowCount === 0) {
         return res.status(404).json({ error: "Tournament not found." });
       }
 
-      // Insert player INTO THIS tournament's player list
-      // (this matches your existing players routes which scope by tournament_id)
+      // 2️⃣ Upsert player by email (GLOBAL player record)
       const p = await pool.query(
         `
-        insert into players (tournament_id, name, email, dupr_rating)
-        values ($1, $2, $3, $4)
-        on conflict (tournament_id, email_lower)
-        do update set
-          name = excluded.name,
-          email = excluded.email,
-          dupr_rating = excluded.dupr_rating
-        returning id, name, email, dupr_rating as "duprRating";
+        insert into players (name, email, dupr_rating)
+        values ($1, $2, $3)
+        on conflict (email_lower) do update
+          set name = excluded.name,
+              dupr_rating = excluded.dupr_rating
+        returning id, name, email, dupr_rating;
         `,
-        [tournamentId, trimmedName, trimmedEmail, duprNum]
+        [trimmedName, trimmedEmail, duprNum]
       );
 
-      return res.json({ tournamentId, player: p.rows[0] });
+      const player = p.rows[0];
+
+      // 3️⃣ Attach player to tournament (JOIN TABLE)
+      await pool.query(
+        `
+        insert into tournament_players (tournament_id, player_id)
+        values ($1, $2)
+        on conflict do nothing;
+        `,
+        [tournamentId, player.id]
+      );
+
+      return res.json({
+        tournamentId,
+        player: {
+          id: player.id,
+          name: player.name,
+          email: player.email,
+          duprRating: player.dupr_rating,
+        },
+      });
     } catch (e) {
       console.error("Signup failed:", e);
-      return res.status(500).json({ error: "Signup failed." });
+
+      const msg =
+        process.env.NODE_ENV === "production"
+          ? "Signup failed."
+          : e?.message || e?.detail || "Signup failed.";
+
+      return res.status(500).json({ error: msg });
     }
   });
 

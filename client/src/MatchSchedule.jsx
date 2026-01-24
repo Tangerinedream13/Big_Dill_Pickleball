@@ -56,6 +56,10 @@ export default function MatchSchedule() {
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState("");
 
+  // advance to semis state
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceError, setAdvanceError] = useState("");
+
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
@@ -68,6 +72,7 @@ export default function MatchSchedule() {
     try {
       setStatus("loading");
       setResetError("");
+      setAdvanceError("");
 
       if (!tid) {
         setState(null);
@@ -127,6 +132,15 @@ export default function MatchSchedule() {
     const finals = (state?.finals ?? []).map((m) => ({ ...m })); // FINAL/THIRD already set
     return [...rr, ...sf, ...finals];
   }, [state]);
+
+  // RR completeness helpers
+  const unscoredRR = useMemo(() => {
+    return (state?.rrMatches ?? []).filter((m) => !m.winnerId);
+  }, [state]);
+
+  const rrComplete = useMemo(() => {
+    return !!tid && status === "ok" && unscoredRR.length === 0;
+  }, [tid, status, unscoredRR.length]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -241,6 +255,43 @@ export default function MatchSchedule() {
     }
   }
 
+  // Advance to Semis action (guarded + friendly message)
+  async function advanceToSemis() {
+    setAdvanceError("");
+
+    if (!tid) {
+      setAdvanceError("No tournament selected.");
+      return;
+    }
+
+    const missing = (state?.rrMatches ?? []).filter((m) => !m.winnerId);
+    if (missing.length > 0) {
+      setAdvanceError(
+        `Finish scoring Round Robin first. Unscored: ${missing
+          .map((m) => m.id)
+          .join(", ")}`
+      );
+      return;
+    }
+
+    setAdvancing(true);
+    try {
+      const res = await fetch(withTid("/api/playoffs/generate"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      await loadState();
+      setPhaseFilter("SF"); // optional: jump to semis after generating
+    } catch (e) {
+      console.error(e);
+      setAdvanceError(e.message || "Could not generate semifinals.");
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
   async function resetMatches() {
     setResetError("");
 
@@ -321,6 +372,21 @@ export default function MatchSchedule() {
             </Stack>
 
             <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+              {/* ✅ NEW: Advance to Semis button */}
+              <Button
+                variant="pickle"
+                onClick={advanceToSemis}
+                disabled={!rrComplete || advancing}
+              >
+                <Text>
+                  {advancing
+                    ? "Advancing…"
+                    : rrComplete
+                    ? "Advance to Semis"
+                    : `Advance to Semis (${unscoredRR.length} unscored)`}
+                </Text>
+              </Button>
+
               <Button
                 variant="outline"
                 onClick={resetMatches}
@@ -340,6 +406,20 @@ export default function MatchSchedule() {
               </Button>
             </HStack>
           </Flex>
+
+          {advanceError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {advanceError}
+              </Text>
+            </Box>
+          ) : null}
 
           {resetError ? (
             <Box

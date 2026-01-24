@@ -22,7 +22,7 @@ import {
   CalendarDays,
   RotateCcw,
   Eraser,
-  ArrowRight,
+  ChevronsRight,
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
@@ -71,7 +71,6 @@ export default function MatchSchedule() {
   // advance to semis state
   const [advancing, setAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState("");
-  const [advanceInfo, setAdvanceInfo] = useState("");
 
   const tid = getCurrentTournamentId();
 
@@ -87,7 +86,6 @@ export default function MatchSchedule() {
       setResetError("");
       setResetPlayoffsError("");
       setAdvanceError("");
-      setAdvanceInfo("");
 
       if (!tid) {
         setState(null);
@@ -141,6 +139,43 @@ export default function MatchSchedule() {
     return map;
   }, [state]);
 
+  const rrIncompleteMatches = useMemo(() => {
+    const rr = state?.rrMatches ?? [];
+    return rr.filter((m) => !m.winnerId);
+  }, [state]);
+
+  const rrComplete = useMemo(() => {
+    const rr = state?.rrMatches ?? [];
+    return rr.length > 0 && rr.every((m) => m.winnerId);
+  }, [state]);
+
+  const semisExist = useMemo(() => {
+    return (state?.semis ?? []).length > 0;
+  }, [state]);
+
+  const finalsExist = useMemo(() => {
+    return (state?.finals ?? []).length > 0;
+  }, [state]);
+
+  const tournamentComplete = useMemo(() => {
+    const finals = state?.finals ?? [];
+    const finalMatch = finals.find(
+      (m) => m.phase === "FINAL" || m.id === "FINAL"
+    );
+    const thirdMatch = finals.find(
+      (m) => m.phase === "THIRD" || m.id === "THIRD"
+    );
+    // "complete" when Final + Third both have winners (if they exist)
+    if (!finalMatch && !thirdMatch) return false;
+    const finalDone = finalMatch ? !!finalMatch.winnerId : true;
+    const thirdDone = thirdMatch ? !!thirdMatch.winnerId : true;
+    return finalDone && thirdDone;
+  }, [state]);
+
+  const canAdvanceToSemis = useMemo(() => {
+    return !!tid && rrComplete && !semisExist && !advancing;
+  }, [tid, rrComplete, semisExist, advancing]);
+
   const allMatches = useMemo(() => {
     const rr = (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" }));
     const sf = (state?.semis ?? []).map((m) => ({ ...m, phase: "SF" }));
@@ -161,17 +196,6 @@ export default function MatchSchedule() {
       return a.includes(q) || b.includes(q) || id.includes(q);
     });
   }, [allMatches, phaseFilter, query, teamsById]);
-
-  const rrUnscoredIds = useMemo(() => {
-    const rr = state?.rrMatches ?? [];
-    return rr
-      .filter((m) => !m?.winnerId)
-      .map((m) => String(m.id))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [state]);
-
-  const rrComplete =
-    rrUnscoredIds.length === 0 && (state?.rrMatches?.length ?? 0) > 0;
 
   function setScore(matchId, side, value) {
     setEdits((prev) => ({
@@ -336,22 +360,24 @@ export default function MatchSchedule() {
 
   async function advanceToSemis() {
     setAdvanceError("");
-    setAdvanceInfo("");
 
     if (!tid) {
       setAdvanceError("No tournament selected.");
       return;
     }
 
-    // Front-end guard: show missing RR matches
+    // Friendly local guard (better than just “409”)
     if (!rrComplete) {
-      const missing = rrUnscoredIds;
+      const missing = rrIncompleteMatches.map((m) => m.id).join(", ");
       setAdvanceError(
-        missing.length === 0
-          ? "Round robin has no matches yet. Generate RR first."
-          : `Round robin is not complete. Unscored matches: ${missing.join(
-              ", "
-            )}`
+        `Round robin isn't complete yet. Score these matches first: ${missing}`
+      );
+      return;
+    }
+
+    if (semisExist) {
+      setAdvanceError(
+        "Semifinals already exist. Use Reset Playoffs if you want to regenerate."
       );
       return;
     }
@@ -364,15 +390,20 @@ export default function MatchSchedule() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
-      setAdvanceInfo("Semifinals generated!");
       await loadState();
+
+      // ✨ Auto-jump to semis
+      setPhaseFilter("SF");
+      setQuery("");
     } catch (e) {
       console.error(e);
-      setAdvanceError(e.message || "Could not generate semifinals.");
+      setAdvanceError(e?.message || "Could not generate semifinals.");
     } finally {
       setAdvancing(false);
     }
   }
+
+  const standings = state?.standings ?? [];
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
@@ -386,7 +417,7 @@ export default function MatchSchedule() {
             gap={4}
           >
             <Stack gap={1}>
-              <HStack gap={3}>
+              <HStack gap={3} wrap="wrap">
                 <Box
                   w="36px"
                   h="36px"
@@ -414,21 +445,44 @@ export default function MatchSchedule() {
                 {status === "ok" && (
                   <Badge variant="pickle">{filtered.length} matches</Badge>
                 )}
+
+                {/* Tiny lifecycle badges */}
+                {tid && status === "ok" ? (
+                  <>
+                    <Badge variant={rrComplete ? "pickle" : "club"}>
+                      RR {rrComplete ? "Complete" : "In Progress"}
+                    </Badge>
+                    <Badge variant={semisExist ? "pickle" : "club"}>
+                      Semis {semisExist ? "Ready" : "—"}
+                    </Badge>
+                    <Badge variant={finalsExist ? "pickle" : "club"}>
+                      Finals {finalsExist ? "Ready" : "—"}
+                    </Badge>
+                    {tournamentComplete ? (
+                      <Badge variant="pickle">Tournament Complete ✅</Badge>
+                    ) : null}
+                  </>
+                ) : null}
               </HStack>
 
               <Text opacity={0.85} maxW="70ch">
-                Enter scores for round robin and playoffs. 
+                Enter scores for round robin and playoffs.
               </Text>
             </Stack>
 
-            <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+            <HStack
+              gap={2}
+              justify={{ base: "flex-start", md: "flex-end" }}
+              wrap="wrap"
+            >
+              {/* ✅ Boxed Advance button */}
               <Button
                 variant="outline"
                 onClick={advanceToSemis}
-                disabled={!tid || advancing}
+                disabled={!canAdvanceToSemis}
               >
                 <HStack gap={2}>
-                  <ArrowRight size={16} />
+                  <ChevronsRight size={16} />
                   <Text>{advancing ? "Advancing…" : "Advance to Semis"}</Text>
                 </HStack>
               </Button>
@@ -465,20 +519,6 @@ export default function MatchSchedule() {
               </Button>
             </HStack>
           </Flex>
-
-          {advanceInfo ? (
-            <Box
-              border="1px solid"
-              borderColor="green.200"
-              bg="green.50"
-              p={3}
-              borderRadius="lg"
-            >
-              <Text color="green.800" fontSize="sm">
-                {advanceInfo}
-              </Text>
-            </Box>
-          ) : null}
 
           {advanceError ? (
             <Box
@@ -520,6 +560,51 @@ export default function MatchSchedule() {
                 {resetError}
               </Text>
             </Box>
+          ) : null}
+
+          {/* Standings (super helpful for demo + bracket sanity) */}
+          {tid && status === "ok" && standings.length > 0 ? (
+            <Card.Root>
+              <Card.Body>
+                <Flex
+                  justify="space-between"
+                  align="center"
+                  mb={3}
+                  wrap="wrap"
+                  gap={2}
+                >
+                  <Heading size="sm">Standings</Heading>
+                  <Text fontSize="sm" opacity={0.7}>
+                    (RR-based)
+                  </Text>
+                </Flex>
+
+                <Table.Root size="sm" variant="outline">
+                  <Table.Header>
+                    <Table.Row>
+                      <Table.ColumnHeader>#</Table.ColumnHeader>
+                      <Table.ColumnHeader>Team</Table.ColumnHeader>
+                      <Table.ColumnHeader>Wins</Table.ColumnHeader>
+                      <Table.ColumnHeader>PD</Table.ColumnHeader>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {standings.map((s, idx) => {
+                      const name =
+                        teamsById.get(String(s.teamId)) ?? `Team ${s.teamId}`;
+                      return (
+                        <Table.Row key={String(s.teamId)}>
+                          <Table.Cell>{idx + 1}</Table.Cell>
+                          <Table.Cell fontWeight="600">{name}</Table.Cell>
+                          <Table.Cell>{s.wins}</Table.Cell>
+                          <Table.Cell>{s.pointDiff}</Table.Cell>
+                        </Table.Row>
+                      );
+                    })}
+                  </Table.Body>
+                </Table.Root>
+              </Card.Body>
+            </Card.Root>
           ) : null}
 
           {/* Controls */}

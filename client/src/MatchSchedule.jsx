@@ -15,7 +15,14 @@ import {
   Select,
   Table,
 } from "@chakra-ui/react";
-import { ArrowLeft, Save, Search, CalendarDays, RotateCcw } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Search,
+  CalendarDays,
+  RotateCcw,
+  Eraser,
+} from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
 function labelForPhase(phase) {
@@ -56,6 +63,10 @@ export default function MatchSchedule() {
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState("");
 
+  // reset playoffs state
+  const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
+  const [resetPlayoffsError, setResetPlayoffsError] = useState("");
+
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
@@ -68,6 +79,7 @@ export default function MatchSchedule() {
     try {
       setStatus("loading");
       setResetError("");
+      setResetPlayoffsError("");
 
       if (!tid) {
         setState(null);
@@ -248,9 +260,7 @@ export default function MatchSchedule() {
       setResetError("No tournament selected.");
       return;
     }
-    if (
-      !confirm("Reset ALL matches for this tournament? This cannot be undone.")
-    ) {
+    if (!confirm("Reset ALL matches for this tournament? This cannot be undone.")) {
       return;
     }
 
@@ -268,6 +278,34 @@ export default function MatchSchedule() {
       setResetError(e.message || "Could not reset matches.");
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function resetPlayoffs() {
+    setResetPlayoffsError("");
+
+    if (!tid) {
+      setResetPlayoffsError("No tournament selected.");
+      return;
+    }
+    if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)")) {
+      return;
+    }
+
+    setResettingPlayoffs(true);
+    try {
+      const res = await fetch(withTid("/api/playoffs/reset"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      await loadState();
+    } catch (e) {
+      console.error(e);
+      setResetPlayoffsError(e.message || "Could not reset playoffs.");
+    } finally {
+      setResettingPlayoffs(false);
     }
   }
 
@@ -315,12 +353,25 @@ export default function MatchSchedule() {
 
               <Text opacity={0.85} maxW="70ch">
                 Enter scores for round robin and playoffs. Tip: use{" "}
-                <b>Reset Matches</b> if you need to rename/delete teams or
-                regenerate teams.
+                <b>Reset Playoffs</b> if you want to redo semis/finals without
+                wiping RR scores.
               </Text>
             </Stack>
 
             <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+              <Button
+                variant="outline"
+                onClick={resetPlayoffs}
+                disabled={!tid || resettingPlayoffs}
+              >
+                <HStack gap={2}>
+                  <Eraser size={16} />
+                  <Text>
+                    {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+                  </Text>
+                </HStack>
+              </Button>
+
               <Button
                 variant="outline"
                 onClick={resetMatches}
@@ -340,6 +391,20 @@ export default function MatchSchedule() {
               </Button>
             </HStack>
           </Flex>
+
+          {resetPlayoffsError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {resetPlayoffsError}
+              </Text>
+            </Box>
+          ) : null}
 
           {resetError ? (
             <Box

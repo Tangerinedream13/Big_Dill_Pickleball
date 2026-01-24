@@ -88,6 +88,55 @@ async function getTeamsForTournament(tournamentId) {
   return r.rows;
 }
 
+// Compute placements from completed playoff matches (FINAL + THIRD winners)
+function computePlacementsFromMatches({ semis, finals }) {
+  const byId = new Map();
+
+  for (const m of [...(semis ?? []), ...(finals ?? [])]) {
+    byId.set(String(m.id), m);
+  }
+
+  const final = byId.get("FINAL");
+  const third = byId.get("THIRD");
+
+  // Need FINAL + THIRD winners to determine placements
+  if (!final?.winnerId || !third?.winnerId) return null;
+
+  const champion = String(final.winnerId);
+  const runnerUp =
+    String(final.winnerId) === String(final.teamAId)
+      ? String(final.teamBId)
+      : String(final.teamAId);
+
+  const thirdPlace = String(third.winnerId);
+  const fourthPlace =
+    String(third.winnerId) === String(third.teamAId)
+      ? String(third.teamBId)
+      : String(third.teamAId);
+
+  return {
+    champion,
+    runnerUp,
+    third: thirdPlace,
+    fourth: fourthPlace,
+  };
+}
+
+// Decorate placements with team names so UI can render directly
+function decoratePlacementsWithTeamNames(placements, teams) {
+  if (!placements) return null;
+
+  const nameById = new Map((teams ?? []).map((t) => [String(t.id), t.name]));
+  const nameFor = (id) => nameById.get(String(id)) ?? `Team ${id}`;
+
+  return {
+    champion: { id: placements.champion, name: nameFor(placements.champion) },
+    runnerUp: { id: placements.runnerUp, name: nameFor(placements.runnerUp) },
+    third: { id: placements.third, name: nameFor(placements.third) },
+    fourth: { id: placements.fourth, name: nameFor(placements.fourth) },
+  };
+}
+
 function parseISODate(v) {
   if (!v) return null;
   const d = new Date(v);
@@ -390,10 +439,21 @@ app.get("/api/tournament/state", async (req, res) => {
       rrMatches
     );
 
-    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+    const placementsRaw = computePlacementsFromMatches({ semis, finals });
+    const placements = decoratePlacementsWithTeamNames(placementsRaw, teams);
+
+    res.json({
+      teams,
+      rrMatches,
+      standings,
+      semis,
+      finals,
+      placements,
+      tournamentId,
+    });
   } catch (err) {
     console.error("State error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
@@ -407,14 +467,14 @@ app.post("/api/tournament/reset", async (req, res) => {
     res.json({ ok: true, tournamentId });
   } catch (err) {
     console.error("Reset error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
 // ------------------ ROUND ROBIN ------------------
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
-    const tournamentId = await getDefaultTournamentId();
+    const tournamentId = await resolveTournamentId(req); // ✅ was getDefaultTournamentId()
     const teams = await getTeamsForTournament(tournamentId);
 
     const gamesPerTeamRaw = req.body?.gamesPerTeam;
@@ -520,7 +580,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     });
   } catch (err) {
     console.error("RR generate error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
@@ -592,10 +652,21 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
       rrMatches
     );
 
-    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+    const placementsRaw = computePlacementsFromMatches({ semis, finals });
+    const placements = decoratePlacementsWithTeamNames(placementsRaw, teams);
+
+    res.json({
+      teams,
+      rrMatches,
+      standings,
+      semis,
+      finals,
+      placements,
+      tournamentId,
+    });
   } catch (err) {
     console.error("RR score error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
@@ -663,7 +734,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
     res.json({ semis, tournamentId });
   } catch (err) {
     console.error("Playoffs generate error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
@@ -684,9 +755,10 @@ app.post("/api/playoffs/reset", async (req, res) => {
     res.json({ ok: true, tournamentId });
   } catch (err) {
     console.error("Playoffs reset error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
+
 // ------------------ PLAYOFFS SCORING ------------------
 
 // Score a semifinal (SF1 or SF2). When BOTH are scored, auto-generate FINAL + THIRD (if not created yet).
@@ -786,12 +858,24 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       "FINAL",
       "THIRD",
     ]);
+
     const standings = engine.computeStandings(
       teams.map((t) => t.id),
       rrMatches
     );
 
-    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+    const placementsRaw = computePlacementsFromMatches({ semis, finals });
+    const placements = decoratePlacementsWithTeamNames(placementsRaw, teams);
+
+    res.json({
+      teams,
+      rrMatches,
+      standings,
+      semis,
+      finals,
+      placements,
+      tournamentId,
+    });
   } catch (err) {
     console.error("POST /api/playoffs/semis/:id/score error:", err);
     res.status(500).json({ error: errToMessage(err) });
@@ -857,12 +941,24 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       "FINAL",
       "THIRD",
     ]);
+
     const standings = engine.computeStandings(
       teams.map((t) => t.id),
       rrMatches
     );
 
-    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+    const placementsRaw = computePlacementsFromMatches({ semis, finals });
+    const placements = decoratePlacementsWithTeamNames(placementsRaw, teams);
+
+    res.json({
+      teams,
+      rrMatches,
+      standings,
+      semis,
+      finals,
+      placements,
+      tournamentId,
+    });
   } catch (err) {
     console.error("POST /api/playoffs/finals/:id/score error:", err);
     res.status(500).json({ error: errToMessage(err) });

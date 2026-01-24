@@ -15,7 +15,14 @@ import {
   Select,
   Table,
 } from "@chakra-ui/react";
-import { ArrowLeft, Save, Search, CalendarDays, RotateCcw } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Search,
+  CalendarDays,
+  RotateCcw,
+  Eraser,
+} from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
 function labelForPhase(phase) {
@@ -56,9 +63,9 @@ export default function MatchSchedule() {
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState("");
 
-  // advance to semis state
-  const [advancing, setAdvancing] = useState(false);
-  const [advanceError, setAdvanceError] = useState("");
+  // reset playoffs state
+  const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
+  const [resetPlayoffsError, setResetPlayoffsError] = useState("");
 
   const tid = getCurrentTournamentId();
 
@@ -72,7 +79,7 @@ export default function MatchSchedule() {
     try {
       setStatus("loading");
       setResetError("");
-      setAdvanceError("");
+      setResetPlayoffsError("");
 
       if (!tid) {
         setState(null);
@@ -132,15 +139,6 @@ export default function MatchSchedule() {
     const finals = (state?.finals ?? []).map((m) => ({ ...m })); // FINAL/THIRD already set
     return [...rr, ...sf, ...finals];
   }, [state]);
-
-  // RR completeness helpers
-  const unscoredRR = useMemo(() => {
-    return (state?.rrMatches ?? []).filter((m) => !m.winnerId);
-  }, [state]);
-
-  const rrComplete = useMemo(() => {
-    return !!tid && status === "ok" && unscoredRR.length === 0;
-  }, [tid, status, unscoredRR.length]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -255,43 +253,6 @@ export default function MatchSchedule() {
     }
   }
 
-  // Advance to Semis action (guarded + friendly message)
-  async function advanceToSemis() {
-    setAdvanceError("");
-
-    if (!tid) {
-      setAdvanceError("No tournament selected.");
-      return;
-    }
-
-    const missing = (state?.rrMatches ?? []).filter((m) => !m.winnerId);
-    if (missing.length > 0) {
-      setAdvanceError(
-        `Finish scoring Round Robin first. Unscored: ${missing
-          .map((m) => m.id)
-          .join(", ")}`
-      );
-      return;
-    }
-
-    setAdvancing(true);
-    try {
-      const res = await fetch(withTid("/api/playoffs/generate"), {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
-      await loadState();
-      setPhaseFilter("SF"); // optional: jump to semis after generating
-    } catch (e) {
-      console.error(e);
-      setAdvanceError(e.message || "Could not generate semifinals.");
-    } finally {
-      setAdvancing(false);
-    }
-  }
-
   async function resetMatches() {
     setResetError("");
 
@@ -299,9 +260,7 @@ export default function MatchSchedule() {
       setResetError("No tournament selected.");
       return;
     }
-    if (
-      !confirm("Reset ALL matches for this tournament? This cannot be undone.")
-    ) {
+    if (!confirm("Reset ALL matches for this tournament? This cannot be undone.")) {
       return;
     }
 
@@ -319,6 +278,34 @@ export default function MatchSchedule() {
       setResetError(e.message || "Could not reset matches.");
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function resetPlayoffs() {
+    setResetPlayoffsError("");
+
+    if (!tid) {
+      setResetPlayoffsError("No tournament selected.");
+      return;
+    }
+    if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)")) {
+      return;
+    }
+
+    setResettingPlayoffs(true);
+    try {
+      const res = await fetch(withTid("/api/playoffs/reset"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      await loadState();
+    } catch (e) {
+      console.error(e);
+      setResetPlayoffsError(e.message || "Could not reset playoffs.");
+    } finally {
+      setResettingPlayoffs(false);
     }
   }
 
@@ -366,25 +353,23 @@ export default function MatchSchedule() {
 
               <Text opacity={0.85} maxW="70ch">
                 Enter scores for round robin and playoffs. Tip: use{" "}
-                <b>Reset Matches</b> if you need to rename/delete teams or
-                regenerate teams.
+                <b>Reset Playoffs</b> if you want to redo semis/finals without
+                wiping RR scores.
               </Text>
             </Stack>
 
             <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
-              {/* ✅ NEW: Advance to Semis button */}
               <Button
-                variant="pickle"
-                onClick={advanceToSemis}
-                disabled={!rrComplete || advancing}
+                variant="outline"
+                onClick={resetPlayoffs}
+                disabled={!tid || resettingPlayoffs}
               >
-                <Text>
-                  {advancing
-                    ? "Advancing…"
-                    : rrComplete
-                    ? "Advance to Semis"
-                    : `Advance to Semis (${unscoredRR.length} unscored)`}
-                </Text>
+                <HStack gap={2}>
+                  <Eraser size={16} />
+                  <Text>
+                    {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+                  </Text>
+                </HStack>
               </Button>
 
               <Button
@@ -407,7 +392,7 @@ export default function MatchSchedule() {
             </HStack>
           </Flex>
 
-          {advanceError ? (
+          {resetPlayoffsError ? (
             <Box
               border="1px solid"
               borderColor="red.200"
@@ -416,7 +401,7 @@ export default function MatchSchedule() {
               borderRadius="lg"
             >
               <Text color="red.700" fontSize="sm">
-                {advanceError}
+                {resetPlayoffsError}
               </Text>
             </Box>
           ) : null}

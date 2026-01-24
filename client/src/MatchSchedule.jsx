@@ -14,6 +14,7 @@ import {
   Text,
   Select,
   Table,
+  createListCollection,
 } from "@chakra-ui/react";
 import {
   ArrowLeft,
@@ -46,6 +47,16 @@ function isIntString(v) {
   const n = Number(s);
   return Number.isInteger(n) && String(n) === s;
 }
+
+const phaseCollection = createListCollection({
+  items: [
+    { label: "All phases", value: "ALL" },
+    { label: "Round Robin", value: "RR" },
+    { label: "Semifinals", value: "SF" },
+    { label: "Final", value: "FINAL" },
+    { label: "Third Place", value: "THIRD" },
+  ],
+});
 
 export default function MatchSchedule() {
   const navigate = useNavigate();
@@ -620,30 +631,24 @@ export default function MatchSchedule() {
                   <Text fontWeight="700">Filter</Text>
 
                   <Select.Root
+                    collection={phaseCollection}
                     value={[phaseFilter]}
-                    onValueChange={(details) =>
-                      setPhaseFilter(details.value?.[0] ?? "ALL")
-                    }
+                    onValueChange={(details) => {
+                      setPhaseFilter(details.value?.[0] ?? "ALL");
+                    }}
                     size="md"
                     disabled={!tid}
                   >
                     <Select.Trigger maxW="240px">
                       <Select.ValueText placeholder="All phases" />
                     </Select.Trigger>
+
                     <Select.Content>
-                      <Select.Item item={{ value: "ALL" }}>
-                        All phases
-                      </Select.Item>
-                      <Select.Item item={{ value: "RR" }}>
-                        Round Robin
-                      </Select.Item>
-                      <Select.Item item={{ value: "SF" }}>
-                        Semifinals
-                      </Select.Item>
-                      <Select.Item item={{ value: "FINAL" }}>Final</Select.Item>
-                      <Select.Item item={{ value: "THIRD" }}>
-                        Third Place
-                      </Select.Item>
+                      {phaseCollection.items.map((item) => (
+                        <Select.Item key={item.value} item={item}>
+                          {item.label}
+                        </Select.Item>
+                      ))}
                     </Select.Content>
                   </Select.Root>
                 </HStack>

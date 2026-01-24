@@ -22,6 +22,7 @@ import {
   CalendarDays,
   RotateCcw,
   Eraser,
+  ArrowRight,
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
@@ -67,6 +68,11 @@ export default function MatchSchedule() {
   const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
   const [resetPlayoffsError, setResetPlayoffsError] = useState("");
 
+  // advance to semis state
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceError, setAdvanceError] = useState("");
+  const [advanceInfo, setAdvanceInfo] = useState("");
+
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
@@ -80,6 +86,8 @@ export default function MatchSchedule() {
       setStatus("loading");
       setResetError("");
       setResetPlayoffsError("");
+      setAdvanceError("");
+      setAdvanceInfo("");
 
       if (!tid) {
         setState(null);
@@ -153,6 +161,17 @@ export default function MatchSchedule() {
       return a.includes(q) || b.includes(q) || id.includes(q);
     });
   }, [allMatches, phaseFilter, query, teamsById]);
+
+  const rrUnscoredIds = useMemo(() => {
+    const rr = state?.rrMatches ?? [];
+    return rr
+      .filter((m) => !m?.winnerId)
+      .map((m) => String(m.id))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [state]);
+
+  const rrComplete =
+    rrUnscoredIds.length === 0 && (state?.rrMatches?.length ?? 0) > 0;
 
   function setScore(matchId, side, value) {
     setEdits((prev) => ({
@@ -260,7 +279,9 @@ export default function MatchSchedule() {
       setResetError("No tournament selected.");
       return;
     }
-    if (!confirm("Reset ALL matches for this tournament? This cannot be undone.")) {
+    if (
+      !confirm("Reset ALL matches for this tournament? This cannot be undone.")
+    ) {
       return;
     }
 
@@ -288,7 +309,11 @@ export default function MatchSchedule() {
       setResetPlayoffsError("No tournament selected.");
       return;
     }
-    if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)")) {
+    if (
+      !confirm(
+        "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
+      )
+    ) {
       return;
     }
 
@@ -306,6 +331,46 @@ export default function MatchSchedule() {
       setResetPlayoffsError(e.message || "Could not reset playoffs.");
     } finally {
       setResettingPlayoffs(false);
+    }
+  }
+
+  async function advanceToSemis() {
+    setAdvanceError("");
+    setAdvanceInfo("");
+
+    if (!tid) {
+      setAdvanceError("No tournament selected.");
+      return;
+    }
+
+    // Front-end guard: show missing RR matches
+    if (!rrComplete) {
+      const missing = rrUnscoredIds;
+      setAdvanceError(
+        missing.length === 0
+          ? "Round robin has no matches yet. Generate RR first."
+          : `Round robin is not complete. Unscored matches: ${missing.join(
+              ", "
+            )}`
+      );
+      return;
+    }
+
+    setAdvancing(true);
+    try {
+      const res = await fetch(withTid("/api/playoffs/generate"), {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      setAdvanceInfo("Semifinals generated!");
+      await loadState();
+    } catch (e) {
+      console.error(e);
+      setAdvanceError(e.message || "Could not generate semifinals.");
+    } finally {
+      setAdvancing(false);
     }
   }
 
@@ -352,13 +417,22 @@ export default function MatchSchedule() {
               </HStack>
 
               <Text opacity={0.85} maxW="70ch">
-                Enter scores for round robin and playoffs. Tip: use{" "}
-                <b>Reset Playoffs</b> if you want to redo semis/finals without
-                wiping RR scores.
+                Enter scores for round robin and playoffs. 
               </Text>
             </Stack>
 
             <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+              <Button
+                variant="outline"
+                onClick={advanceToSemis}
+                disabled={!tid || advancing}
+              >
+                <HStack gap={2}>
+                  <ArrowRight size={16} />
+                  <Text>{advancing ? "Advancing…" : "Advance to Semis"}</Text>
+                </HStack>
+              </Button>
+
               <Button
                 variant="outline"
                 onClick={resetPlayoffs}
@@ -391,6 +465,34 @@ export default function MatchSchedule() {
               </Button>
             </HStack>
           </Flex>
+
+          {advanceInfo ? (
+            <Box
+              border="1px solid"
+              borderColor="green.200"
+              bg="green.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="green.800" fontSize="sm">
+                {advanceInfo}
+              </Text>
+            </Box>
+          ) : null}
+
+          {advanceError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {advanceError}
+              </Text>
+            </Box>
+          ) : null}
 
           {resetPlayoffsError ? (
             <Box

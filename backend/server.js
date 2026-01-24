@@ -687,6 +687,187 @@ app.post("/api/playoffs/reset", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ------------------ PLAYOFFS SCORING ------------------
+
+// Score a semifinal (SF1 or SF2). When BOTH are scored, auto-generate FINAL + THIRD (if not created yet).
+app.post("/api/playoffs/semis/:id/score", async (req, res) => {
+  const { id } = req.params; // SF1 or SF2
+  const { scoreA, scoreB } = req.body;
+
+  try {
+    const tournamentId = await resolveTournamentId(req);
+
+    if (!["SF1", "SF2"].includes(id)) {
+      return res.status(400).json({ error: "Invalid semifinal id." });
+    }
+    if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
+      return res.status(400).json({ error: "Scores must be integers." });
+    }
+    if (scoreA < 0 || scoreB < 0) {
+      return res.status(400).json({ error: "Scores must be >= 0." });
+    }
+    if (scoreA === scoreB) {
+      return res.status(400).json({ error: "Ties are not allowed." });
+    }
+
+    // Load the semifinal match
+    const mRes = await pool.query(
+      `
+      select team_a_id as "teamAId", team_b_id as "teamBId"
+      from matches
+      where tournament_id = $1
+        and code = $2
+        and phase = 'SF'
+      `,
+      [tournamentId, id]
+    );
+
+    if (mRes.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ error: `Semifinal match not found: ${id}` });
+    }
+
+    const m = mRes.rows[0];
+    const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
+
+    // Save semifinal score
+    await pool.query(
+      `
+      update matches
+      set score_a = $1, score_b = $2, winner_id = $3
+      where tournament_id = $4
+        and code = $5
+        and phase = 'SF'
+      `,
+      [scoreA, scoreB, winnerId, tournamentId, id]
+    );
+
+    // If both semis are done, generate FINAL + THIRD (only if they don't exist yet)
+    const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
+    const bothDone = semis.length >= 2 && semis.every((x) => x.winnerId);
+
+    if (bothDone) {
+      const existingFinals = await getMatchesForTournamentByPhase(
+        tournamentId,
+        ["FINAL", "THIRD"]
+      );
+
+      if (existingFinals.length === 0) {
+        // engine should produce [{id:'FINAL', teamAId, teamBId}, {id:'THIRD', ...}]
+        const finalsToCreate = engine.generateFinalsFromSemis(semis);
+
+        const params = [];
+        const chunks = [];
+        let i = 1;
+
+        for (const fm of finalsToCreate) {
+          const phase = fm.id === "FINAL" ? "FINAL" : "THIRD";
+          chunks.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++})`);
+          params.push(tournamentId, fm.id, phase, fm.teamAId, fm.teamBId);
+        }
+
+        await pool.query(
+          `
+          insert into matches (tournament_id, code, phase, team_a_id, team_b_id)
+          values ${chunks.join(", ")}
+          `,
+          params
+        );
+      }
+    }
+
+    // Return updated state (so UI refreshes)
+    const teams = await getTeamsForTournament(tournamentId);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
+    const finals = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
+
+    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+  } catch (err) {
+    console.error("POST /api/playoffs/semis/:id/score error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// Score FINAL or THIRD
+app.post("/api/playoffs/finals/:id/score", async (req, res) => {
+  const { id } = req.params; // FINAL or THIRD
+  const { scoreA, scoreB } = req.body;
+
+  try {
+    const tournamentId = await resolveTournamentId(req);
+
+    if (!["FINAL", "THIRD"].includes(id)) {
+      return res.status(400).json({ error: "Invalid finals id." });
+    }
+    if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
+      return res.status(400).json({ error: "Scores must be integers." });
+    }
+    if (scoreA < 0 || scoreB < 0) {
+      return res.status(400).json({ error: "Scores must be >= 0." });
+    }
+    if (scoreA === scoreB) {
+      return res.status(400).json({ error: "Ties are not allowed." });
+    }
+
+    const mRes = await pool.query(
+      `
+      select team_a_id as "teamAId", team_b_id as "teamBId"
+      from matches
+      where tournament_id = $1
+        and code = $2
+        and phase = $2
+      `,
+      [tournamentId, id]
+    );
+
+    if (mRes.rowCount === 0) {
+      return res.status(404).json({ error: `Match not found: ${id}` });
+    }
+
+    const m = mRes.rows[0];
+    const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
+
+    await pool.query(
+      `
+      update matches
+      set score_a = $1, score_b = $2, winner_id = $3
+      where tournament_id = $4
+        and code = $5
+        and phase = $5
+      `,
+      [scoreA, scoreB, winnerId, tournamentId, id]
+    );
+
+    const teams = await getTeamsForTournament(tournamentId);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
+    const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
+    const finals = await getMatchesForTournamentByPhase(tournamentId, [
+      "FINAL",
+      "THIRD",
+    ]);
+    const standings = engine.computeStandings(
+      teams.map((t) => t.id),
+      rrMatches
+    );
+
+    res.json({ teams, rrMatches, standings, semis, finals, tournamentId });
+  } catch (err) {
+    console.error("POST /api/playoffs/finals/:id/score error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
 
 // ------------------ PLAYERS (DB-BACKED, DUPR) ------------------
 // Search ONLY by name OR DUPR. No "level" / no "skill".

@@ -9,6 +9,7 @@ import {
   Flex,
   Heading,
   HStack,
+  IconButton,
   Input,
   Stack,
   Text,
@@ -17,7 +18,7 @@ import {
   createListCollection,
 } from "@chakra-ui/react";
 import {
-  ArrowLeft,
+  Home,
   Save,
   Search,
   CalendarDays,
@@ -26,6 +27,10 @@ import {
   ChevronsRight,
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
+
+/* -----------------------------
+   Helpers
+------------------------------ */
 
 function labelForPhase(phase) {
   if (phase === "RR") return { label: "Round Robin", variant: "club" };
@@ -48,6 +53,58 @@ function isIntString(v) {
   return Number.isInteger(n) && String(n) === s;
 }
 
+function last4(name) {
+  const s = (name ?? "").trim();
+  if (!s) return "";
+  const parts = s.split(/\s+/);
+  const last = parts[parts.length - 1] || "";
+  return last.slice(0, 4).toUpperCase();
+}
+
+function playersCodeFromTeam(team) {
+  const players = team?.players ?? [];
+  const names = players
+    .map((p) => (typeof p === "string" ? p : p?.name))
+    .filter(Boolean);
+
+  if (names.length === 0) return "";
+
+  const a = last4(names[0]);
+  const b = last4(names[1]);
+
+  if (a && b) return `(${a}, ${b})`;
+  if (a) return `(${a})`;
+  return "";
+}
+
+function formatTeamDisplay(team) {
+  const teamName = team?.name ?? "Team";
+  const code = playersCodeFromTeam(team);
+  return code ? `${teamName} ${code}` : teamName;
+}
+
+// Local score rules (mirrors your backend intent)
+function validateScore(matchPhase, a, b) {
+  const scoreA = Number(a);
+  const scoreB = Number(b);
+
+  if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
+    return "Scores must be whole numbers.";
+  }
+  if (scoreA < 0 || scoreB < 0) return "Scores can’t be negative.";
+  if (scoreA === scoreB) return "Ties not supported.";
+
+  const diff = Math.abs(scoreA - scoreB);
+  if (diff < 2) return "Team must win by 2.";
+
+  const min = matchPhase === "RR" ? 11 : 15;
+  if (Math.max(scoreA, scoreB) < min) {
+    return `Game must be played to at least ${min}.`;
+  }
+
+  return null;
+}
+
 const phaseCollection = createListCollection({
   items: [
     { label: "All phases", value: "ALL" },
@@ -57,6 +114,10 @@ const phaseCollection = createListCollection({
     { label: "Third Place", value: "THIRD" },
   ],
 });
+
+/* -----------------------------
+   Component
+------------------------------ */
 
 export default function MatchSchedule() {
   const navigate = useNavigate();
@@ -108,9 +169,7 @@ export default function MatchSchedule() {
       const res = await fetch(withTid("/api/tournament/state"));
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
-        throw new Error(data?.error ?? `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
 
       setState(data);
       setStatus("ok");
@@ -144,9 +203,26 @@ export default function MatchSchedule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tid]);
 
+  // teamsById now stores the whole team object so we can read players
   const teamsById = useMemo(() => {
     const map = new Map();
-    for (const t of state?.teams ?? []) map.set(String(t.id), t.name);
+    for (const t of state?.teams ?? []) map.set(String(t.id), t);
+    return map;
+  }, [state]);
+
+  const teamNameDisplay = useMemo(() => {
+    return (teamId) => {
+      const team = teamsById.get(String(teamId)) ?? null;
+      if (!team) return `Team ${String(teamId)}`;
+      return formatTeamDisplay(team);
+    };
+  }, [teamsById]);
+
+  // Seed map (from RR standings top-4)
+  const seedByTeamId = useMemo(() => {
+    const map = new Map();
+    const top = (state?.standings ?? []).slice(0, 4);
+    top.forEach((s, idx) => map.set(String(s.teamId), idx + 1));
     return map;
   }, [state]);
 
@@ -160,13 +236,8 @@ export default function MatchSchedule() {
     return rr.length > 0 && rr.every((m) => m.winnerId);
   }, [state]);
 
-  const semisExist = useMemo(() => {
-    return (state?.semis ?? []).length > 0;
-  }, [state]);
-
-  const finalsExist = useMemo(() => {
-    return (state?.finals ?? []).length > 0;
-  }, [state]);
+  const semisExist = useMemo(() => (state?.semis ?? []).length > 0, [state]);
+  const finalsExist = useMemo(() => (state?.finals ?? []).length > 0, [state]);
 
   const tournamentComplete = useMemo(() => {
     const finals = state?.finals ?? [];
@@ -176,16 +247,45 @@ export default function MatchSchedule() {
     const thirdMatch = finals.find(
       (m) => m.phase === "THIRD" || m.id === "THIRD"
     );
-    // "complete" when Final + Third both have winners (if they exist)
     if (!finalMatch && !thirdMatch) return false;
+
     const finalDone = finalMatch ? !!finalMatch.winnerId : true;
     const thirdDone = thirdMatch ? !!thirdMatch.winnerId : true;
     return finalDone && thirdDone;
   }, [state]);
 
+  const tournamentInProgress = useMemo(() => {
+    const rr = state?.rrMatches?.length ?? 0;
+    const sf = state?.semis?.length ?? 0;
+    const fin = state?.finals?.length ?? 0;
+    return rr + sf + fin > 0 && !tournamentComplete;
+  }, [state, tournamentComplete]);
+
   const canAdvanceToSemis = useMemo(() => {
-    return !!tid && rrComplete && !semisExist && !advancing;
-  }, [tid, rrComplete, semisExist, advancing]);
+    return (
+      !!tid && rrComplete && !semisExist && !advancing && !tournamentComplete
+    );
+  }, [tid, rrComplete, semisExist, advancing, tournamentComplete]);
+
+  // Compute RR wins/losses for standings table
+  const rrRecordByTeamId = useMemo(() => {
+    const rr = state?.rrMatches ?? [];
+    const map = new Map(); // teamId -> { wins, losses }
+    for (const m of rr) {
+      const a = String(m.teamAId);
+      const b = String(m.teamBId);
+      if (!map.has(a)) map.set(a, { wins: 0, losses: 0 });
+      if (!map.has(b)) map.set(b, { wins: 0, losses: 0 });
+
+      if (!m.winnerId) continue;
+
+      const w = String(m.winnerId);
+      const loser = w === a ? b : a;
+      map.get(w).wins += 1;
+      map.get(loser).losses += 1;
+    }
+    return map;
+  }, [state]);
 
   const allMatches = useMemo(() => {
     const rr = (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" }));
@@ -194,19 +294,39 @@ export default function MatchSchedule() {
     return [...rr, ...sf, ...finals];
   }, [state]);
 
+  // Sort: in-progress first, then by phase order, then id
+  const sortedMatches = useMemo(() => {
+    const phaseOrder = { RR: 0, SF: 1, FINAL: 2, THIRD: 3 };
+    const copy = [...allMatches];
+
+    copy.sort((x, y) => {
+      const xDone = !!x.winnerId;
+      const yDone = !!y.winnerId;
+      if (xDone !== yDone) return xDone ? 1 : -1; // completed at bottom
+
+      const px = phaseOrder[x.phase] ?? 99;
+      const py = phaseOrder[y.phase] ?? 99;
+      if (px !== py) return px - py;
+
+      return String(x.id ?? "").localeCompare(String(y.id ?? ""));
+    });
+
+    return copy;
+  }, [allMatches]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
-    return allMatches.filter((m) => {
+    return sortedMatches.filter((m) => {
       if (phaseFilter !== "ALL" && m.phase !== phaseFilter) return false;
       if (!q) return true;
 
-      const a = (teamsById.get(String(m.teamAId)) ?? "").toLowerCase();
-      const b = (teamsById.get(String(m.teamBId)) ?? "").toLowerCase();
+      const a = teamNameDisplay(m.teamAId).toLowerCase();
+      const b = teamNameDisplay(m.teamBId).toLowerCase();
       const id = String(m.id ?? "").toLowerCase();
       return a.includes(q) || b.includes(q) || id.includes(q);
     });
-  }, [allMatches, phaseFilter, query, teamsById]);
+  }, [sortedMatches, phaseFilter, query, teamNameDisplay]);
 
   function setScore(matchId, side, value) {
     setEdits((prev) => ({
@@ -252,6 +372,17 @@ export default function MatchSchedule() {
       return;
     }
 
+    if (tournamentComplete) {
+      setEdits((prev) => ({
+        ...prev,
+        [matchId]: {
+          ...prev[matchId],
+          error: "Tournament is complete. Scores are locked.",
+        },
+      }));
+      return;
+    }
+
     const scoreA = row.scoreA;
     const scoreB = row.scoreB;
 
@@ -262,10 +393,12 @@ export default function MatchSchedule() {
       }));
       return;
     }
-    if (scoreA === scoreB) {
+
+    const localError = validateScore(match.phase, scoreA, scoreB);
+    if (localError) {
       setEdits((prev) => ({
         ...prev,
-        [matchId]: { ...prev[matchId], error: "Ties not supported." },
+        [matchId]: { ...prev[matchId], error: localError },
       }));
       return;
     }
@@ -316,9 +449,8 @@ export default function MatchSchedule() {
     }
     if (
       !confirm("Reset ALL matches for this tournament? This cannot be undone.")
-    ) {
+    )
       return;
-    }
 
     setResetting(true);
     try {
@@ -327,7 +459,6 @@ export default function MatchSchedule() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
       await loadState();
     } catch (e) {
       console.error(e);
@@ -348,9 +479,8 @@ export default function MatchSchedule() {
       !confirm(
         "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
       )
-    ) {
+    )
       return;
-    }
 
     setResettingPlayoffs(true);
     try {
@@ -359,7 +489,6 @@ export default function MatchSchedule() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
       await loadState();
     } catch (e) {
       console.error(e);
@@ -376,8 +505,11 @@ export default function MatchSchedule() {
       setAdvanceError("No tournament selected.");
       return;
     }
+    if (tournamentComplete) {
+      setAdvanceError("Tournament is complete.");
+      return;
+    }
 
-    // Friendly local guard (better than just “409”)
     if (!rrComplete) {
       const missing = rrIncompleteMatches.map((m) => m.id).join(", ");
       setAdvanceError(
@@ -402,8 +534,6 @@ export default function MatchSchedule() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
       await loadState();
-
-      // ✨ Auto-jump to semis
       setPhaseFilter("SF");
       setQuery("");
     } catch (e) {
@@ -420,160 +550,181 @@ export default function MatchSchedule() {
     <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
       <Container maxW="6xl">
         <Stack gap={6}>
-          {/* Header */}
-          <Flex
-            align={{ base: "stretch", md: "center" }}
-            justify="space-between"
-            direction={{ base: "column", md: "row" }}
-            gap={4}
+          {/* Sticky Header / Banner */}
+          <Box
+            position="sticky"
+            top="0"
+            zIndex={10}
+            bg="cream.50"
+            pt={1}
+            pb={3}
           >
-            <Stack gap={1}>
-              <HStack gap={3} wrap="wrap">
-                <Box
-                  w="36px"
-                  h="36px"
-                  borderRadius="12px"
-                  bg="club.100"
-                  display="grid"
-                  placeItems="center"
-                  border="1px solid"
-                  borderColor="border"
+            <Flex
+              align={{ base: "stretch", md: "center" }}
+              justify="space-between"
+              direction={{ base: "column", md: "row" }}
+              gap={4}
+            >
+              <Stack gap={1}>
+                <HStack gap={3} wrap="wrap">
+                  {/* Home icon (no extra component needed) */}
+                  <IconButton
+                    aria-label="Home"
+                    variant="outline"
+                    onClick={() => navigate("/")}
+                  >
+                    <Home size={18} />
+                  </IconButton>
+
+                  <Box
+                    w="36px"
+                    h="36px"
+                    borderRadius="12px"
+                    bg="club.100"
+                    display="grid"
+                    placeItems="center"
+                    border="1px solid"
+                    borderColor="border"
+                  >
+                    <CalendarDays size={18} />
+                  </Box>
+
+                  <Heading size="lg" letterSpacing="-0.02em">
+                    Match Schedule
+                  </Heading>
+
+                  {status === "loading" && (
+                    <Badge variant="club">Loading…</Badge>
+                  )}
+                  {status === "no-tournament" && (
+                    <Badge variant="club">No tournament selected</Badge>
+                  )}
+                  {status === "error" && (
+                    <Badge variant="club">Backend issue</Badge>
+                  )}
+                  {status === "ok" && (
+                    <Badge variant="pickle">{filtered.length} matches</Badge>
+                  )}
+
+                  {/* Lifecycle badges */}
+                  {tid && status === "ok" ? (
+                    <>
+                      <Badge variant={rrComplete ? "pickle" : "club"}>
+                        RR {rrComplete ? "Complete" : "In Progress"}
+                      </Badge>
+                      <Badge variant={semisExist ? "pickle" : "club"}>
+                        Semis {semisExist ? "Ready" : "—"}
+                      </Badge>
+                      <Badge variant={finalsExist ? "pickle" : "club"}>
+                        Finals {finalsExist ? "Ready" : "—"}
+                      </Badge>
+
+                      {tournamentInProgress ? (
+                        <Badge variant="club">Tournament In Progress 🟢</Badge>
+                      ) : null}
+
+                      {tournamentComplete ? (
+                        <Badge variant="pickle">Tournament Complete ✅</Badge>
+                      ) : null}
+                    </>
+                  ) : null}
+                </HStack>
+
+                <Text opacity={0.85} maxW="70ch">
+                  Enter scores for round robin and playoffs.
+                  {tournamentComplete ? " (Scores are locked.)" : ""}
+                </Text>
+              </Stack>
+
+              <HStack
+                gap={2}
+                justify={{ base: "flex-start", md: "flex-end" }}
+                wrap="wrap"
+              >
+                <Button
+                  variant="outline"
+                  onClick={advanceToSemis}
+                  disabled={!canAdvanceToSemis}
                 >
-                  <CalendarDays size={18} />
-                </Box>
+                  <HStack gap={2}>
+                    <ChevronsRight size={16} />
+                    <Text>{advancing ? "Advancing…" : "Advance to Semis"}</Text>
+                  </HStack>
+                </Button>
 
-                <Heading size="lg" letterSpacing="-0.02em">
-                  Match Schedule
-                </Heading>
+                <Button
+                  variant="outline"
+                  onClick={resetPlayoffs}
+                  disabled={!tid || resettingPlayoffs}
+                >
+                  <HStack gap={2}>
+                    <Eraser size={16} />
+                    <Text>
+                      {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+                    </Text>
+                  </HStack>
+                </Button>
 
-                {status === "loading" && <Badge variant="club">Loading…</Badge>}
-                {status === "no-tournament" && (
-                  <Badge variant="club">No tournament selected</Badge>
-                )}
-                {status === "error" && (
-                  <Badge variant="club">Backend issue</Badge>
-                )}
-                {status === "ok" && (
-                  <Badge variant="pickle">{filtered.length} matches</Badge>
-                )}
-
-                {/* Tiny lifecycle badges */}
-                {tid && status === "ok" ? (
-                  <>
-                    <Badge variant={rrComplete ? "pickle" : "club"}>
-                      RR {rrComplete ? "Complete" : "In Progress"}
-                    </Badge>
-                    <Badge variant={semisExist ? "pickle" : "club"}>
-                      Semis {semisExist ? "Ready" : "—"}
-                    </Badge>
-                    <Badge variant={finalsExist ? "pickle" : "club"}>
-                      Finals {finalsExist ? "Ready" : "—"}
-                    </Badge>
-                    {tournamentComplete ? (
-                      <Badge variant="pickle">Tournament Complete ✅</Badge>
-                    ) : null}
-                  </>
-                ) : null}
+                <Button
+                  variant="outline"
+                  onClick={resetMatches}
+                  disabled={!tid || resetting}
+                >
+                  <HStack gap={2}>
+                    <RotateCcw size={16} />
+                    <Text>{resetting ? "Resetting…" : "Reset Matches"}</Text>
+                  </HStack>
+                </Button>
               </HStack>
+            </Flex>
 
-              <Text opacity={0.85} maxW="70ch">
-                Enter scores for round robin and playoffs.
-              </Text>
-            </Stack>
-
-            <HStack
-              gap={2}
-              justify={{ base: "flex-start", md: "flex-end" }}
-              wrap="wrap"
-            >
-              {/* ✅ Boxed Advance button */}
-              <Button
-                variant="outline"
-                onClick={advanceToSemis}
-                disabled={!canAdvanceToSemis}
-              >
-                <HStack gap={2}>
-                  <ChevronsRight size={16} />
-                  <Text>{advancing ? "Advancing…" : "Advance to Semis"}</Text>
-                </HStack>
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={resetPlayoffs}
-                disabled={!tid || resettingPlayoffs}
-              >
-                <HStack gap={2}>
-                  <Eraser size={16} />
-                  <Text>
-                    {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+            {/* Errors under banner */}
+            <Stack mt={3} gap={2}>
+              {advanceError ? (
+                <Box
+                  border="1px solid"
+                  borderColor="red.200"
+                  bg="red.50"
+                  p={3}
+                  borderRadius="lg"
+                >
+                  <Text color="red.700" fontSize="sm">
+                    {advanceError}
                   </Text>
-                </HStack>
-              </Button>
+                </Box>
+              ) : null}
 
-              <Button
-                variant="outline"
-                onClick={resetMatches}
-                disabled={!tid || resetting}
-              >
-                <HStack gap={2}>
-                  <RotateCcw size={16} />
-                  <Text>{resetting ? "Resetting…" : "Reset Matches"}</Text>
-                </HStack>
-              </Button>
+              {resetPlayoffsError ? (
+                <Box
+                  border="1px solid"
+                  borderColor="red.200"
+                  bg="red.50"
+                  p={3}
+                  borderRadius="lg"
+                >
+                  <Text color="red.700" fontSize="sm">
+                    {resetPlayoffsError}
+                  </Text>
+                </Box>
+              ) : null}
 
-              <Button variant="outline" onClick={() => navigate("/")}>
-                <HStack gap={2}>
-                  <ArrowLeft size={16} />
-                  <Text>Back</Text>
-                </HStack>
-              </Button>
-            </HStack>
-          </Flex>
+              {resetError ? (
+                <Box
+                  border="1px solid"
+                  borderColor="red.200"
+                  bg="red.50"
+                  p={3}
+                  borderRadius="lg"
+                >
+                  <Text color="red.700" fontSize="sm">
+                    {resetError}
+                  </Text>
+                </Box>
+              ) : null}
+            </Stack>
+          </Box>
 
-          {advanceError ? (
-            <Box
-              border="1px solid"
-              borderColor="red.200"
-              bg="red.50"
-              p={3}
-              borderRadius="lg"
-            >
-              <Text color="red.700" fontSize="sm">
-                {advanceError}
-              </Text>
-            </Box>
-          ) : null}
-
-          {resetPlayoffsError ? (
-            <Box
-              border="1px solid"
-              borderColor="red.200"
-              bg="red.50"
-              p={3}
-              borderRadius="lg"
-            >
-              <Text color="red.700" fontSize="sm">
-                {resetPlayoffsError}
-              </Text>
-            </Box>
-          ) : null}
-
-          {resetError ? (
-            <Box
-              border="1px solid"
-              borderColor="red.200"
-              bg="red.50"
-              p={3}
-              borderRadius="lg"
-            >
-              <Text color="red.700" fontSize="sm">
-                {resetError}
-              </Text>
-            </Box>
-          ) : null}
-
-          {/* Standings (super helpful for demo + bracket sanity) */}
+          {/* Standings */}
           {tid && status === "ok" && standings.length > 0 ? (
             <Card.Root>
               <Card.Body>
@@ -596,18 +747,23 @@ export default function MatchSchedule() {
                       <Table.ColumnHeader>#</Table.ColumnHeader>
                       <Table.ColumnHeader>Team</Table.ColumnHeader>
                       <Table.ColumnHeader>Wins</Table.ColumnHeader>
+                      <Table.ColumnHeader>Losses</Table.ColumnHeader>
                       <Table.ColumnHeader>PD</Table.ColumnHeader>
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
                     {standings.map((s, idx) => {
-                      const name =
-                        teamsById.get(String(s.teamId)) ?? `Team ${s.teamId}`;
+                      const name = teamNameDisplay(s.teamId);
+                      const rec = rrRecordByTeamId.get(String(s.teamId)) ?? {
+                        wins: s.wins ?? 0,
+                        losses: 0,
+                      };
                       return (
                         <Table.Row key={String(s.teamId)}>
                           <Table.Cell>{idx + 1}</Table.Cell>
                           <Table.Cell fontWeight="600">{name}</Table.Cell>
-                          <Table.Cell>{s.wins}</Table.Cell>
+                          <Table.Cell>{rec.wins}</Table.Cell>
+                          <Table.Cell>{rec.losses}</Table.Cell>
                           <Table.Cell>{s.pointDiff}</Table.Cell>
                         </Table.Row>
                       );
@@ -633,9 +789,9 @@ export default function MatchSchedule() {
                   <Select.Root
                     collection={phaseCollection}
                     value={[phaseFilter]}
-                    onValueChange={(details) => {
-                      setPhaseFilter(details.value?.[0] ?? "ALL");
-                    }}
+                    onValueChange={(details) =>
+                      setPhaseFilter(details.value?.[0] ?? "ALL")
+                    }
                     size="md"
                     disabled={!tid}
                   >
@@ -743,10 +899,22 @@ export default function MatchSchedule() {
                   <Table.Body>
                     {filtered.map((m) => {
                       const phaseMeta = labelForPhase(m.phase);
+
+                      const aSeed = seedByTeamId.get(String(m.teamAId));
+                      const bSeed = seedByTeamId.get(String(m.teamBId));
+
+                      const aNameBase = teamNameDisplay(m.teamAId);
+                      const bNameBase = teamNameDisplay(m.teamBId);
+
                       const aName =
-                        teamsById.get(String(m.teamAId)) ?? `Team ${m.teamAId}`;
+                        m.phase === "SF" && aSeed
+                          ? `(${aSeed}) ${aNameBase}`
+                          : aNameBase;
                       const bName =
-                        teamsById.get(String(m.teamBId)) ?? `Team ${m.teamBId}`;
+                        m.phase === "SF" && bSeed
+                          ? `(${bSeed}) ${bNameBase}`
+                          : bNameBase;
+
                       const row = edits[m.id] ?? {
                         scoreA: "",
                         scoreB: "",
@@ -758,8 +926,10 @@ export default function MatchSchedule() {
                         m.winnerId == null
                           ? "—"
                           : String(m.winnerId) === String(m.teamAId)
-                          ? aName
-                          : bName;
+                          ? aNameBase
+                          : bNameBase;
+
+                      const inputsDisabled = !tid || tournamentComplete;
 
                       return (
                         <Table.Row key={`${m.phase}-${m.id}`}>
@@ -786,7 +956,7 @@ export default function MatchSchedule() {
                               onChange={(e) =>
                                 setScore(m.id, "scoreA", e.target.value)
                               }
-                              disabled={!tid}
+                              disabled={inputsDisabled}
                             />
                           </Table.Cell>
 
@@ -798,7 +968,7 @@ export default function MatchSchedule() {
                               onChange={(e) =>
                                 setScore(m.id, "scoreB", e.target.value)
                               }
-                              disabled={!tid}
+                              disabled={inputsDisabled}
                             />
                           </Table.Cell>
 
@@ -815,7 +985,7 @@ export default function MatchSchedule() {
                             <Button
                               variant="pickle"
                               onClick={() => saveMatch(m)}
-                              disabled={!tid || !!row.saving}
+                              disabled={inputsDisabled || !!row.saving}
                             >
                               <HStack gap={2}>
                                 <Save size={16} />

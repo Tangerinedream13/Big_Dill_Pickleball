@@ -124,7 +124,7 @@ export default function MatchSchedule() {
   const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament
   const [state, setState] = useState(null);
 
-  // ✅ Important: teams that include players so we can show (HADD, HADD)
+  // Important: teams that include players so we can show (HADD, HADD)
   const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);
 
   const [phaseFilter, setPhaseFilter] = useState("ALL");
@@ -205,7 +205,7 @@ export default function MatchSchedule() {
       setState(data);
       setStatus("ok");
 
-      // ✅ second fetch gives us player names so we can build (HADD, HADD)
+      // second fetch gives us player names so we can build (HADD, HADD)
       await loadTeamsForDisplay(tid);
 
       const all = [
@@ -528,10 +528,6 @@ export default function MatchSchedule() {
     }
   }
 
-  // ✅ “Advance to Finals” — best-effort:
-  // - If finals already exist: just switch filter
-  // - If semis not complete: show message
-  // - If semis complete but finals missing: tell user to refresh (or backend auto-creates finals on 2nd semi score)
   async function advanceToFinals() {
     setAdvanceFinalsError("");
 
@@ -560,8 +556,6 @@ export default function MatchSchedule() {
       return;
     }
 
-    // If your backend auto-generates finals after both semis are scored,
-    // a refresh will pull them in.
     setAdvancingFinals(true);
     try {
       await loadState();
@@ -580,7 +574,6 @@ export default function MatchSchedule() {
 
   const allMatches = useMemo(() => {
     const list = [...rrMatches, ...semis, ...finals];
-    // In-progress first; completed at bottom
     list.sort((a, b) => {
       const aDone = !!a.winnerId;
       const bDone = !!b.winnerId;
@@ -619,7 +612,6 @@ export default function MatchSchedule() {
   function displayTeamForMatch(m, teamId) {
     const base = teamDisplay(teamId);
 
-    // ✅ Add seeds only for semifinals (1..4)
     if (m.phase === "SF") {
       const seed = seedByTeamId.get(String(teamId));
       if (seed) return `${seed}. ${base}`;
@@ -628,23 +620,38 @@ export default function MatchSchedule() {
     return base;
   }
 
-  const stickyBg = "cream.50"; // opaque
-  const stickyBorder = "1px solid";
-  const stickyBorderColor = "border";
+  // ✅ Nuclear option: force an opaque paint layer + kill any transparency
+  // - backgroundColor uses CSS variable with fallback
+  // - zIndex very high
+  // - transform creates its own compositor layer (Safari fix)
+  // - boxShadow + border helps visually separate
+  const stickyStyle = {
+    backgroundColor: "var(--chakra-colors-cream-50, #FFF7E6)",
+    opacity: 1,
+    transform: "translateZ(0)",
+    WebkitTransform: "translateZ(0)",
+    WebkitBackfaceVisibility: "hidden",
+    backfaceVisibility: "hidden",
+    WebkitBackdropFilter: "none",
+    backdropFilter: "none",
+  };
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* ✅ Sticky header wrapper (opaque) */}
+      {/* Sticky header wrapper (FORCED opaque) */}
       <Box
         position="sticky"
         top="0"
-        zIndex={50}
-        bg={stickyBg}
-        borderBottom={stickyBorder}
-        borderColor={stickyBorderColor}
-        boxShadow="sm"
+        zIndex={9999}
+        borderBottom="1px solid"
+        borderColor="border"
+        boxShadow="md"
+        isolation="isolate"
+        overflow="hidden"
+        style={stickyStyle}
       >
-        <Container maxW="6xl" py={{ base: 4, md: 5 }}>
+        {/* Also paint the inner container, in case the bleed is inside */}
+        <Container maxW="6xl" py={{ base: 4, md: 5 }} style={stickyStyle}>
           <Stack gap={3}>
             <Flex
               align={{ base: "stretch", md: "center" }}
@@ -800,7 +807,8 @@ export default function MatchSchedule() {
         </Container>
       </Box>
 
-      <Container maxW="6xl" pt={{ base: 6, md: 7 }}>
+      {/* Give content enough clearance so it doesn't sit under the header */}
+      <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
         <Stack gap={6}>
           {advanceSemisError ? (
             <Box

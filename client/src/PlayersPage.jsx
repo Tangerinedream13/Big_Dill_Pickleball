@@ -1,3 +1,4 @@
+// client/src/PlayersPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -54,7 +55,11 @@ function formatDupr(dupr) {
 }
 
 /* -----------------------------
-   Players Page (with Doubles Teams + delete + rename + filtering)
+   Players Page (backend-aligned)
+   - Players:  GET /api/tournaments/:tid/players  -> array
+   - Teams:    GET /api/tournaments/:tid/teams    -> { tournamentId, teams: [...] }
+              (your curl shows this shape)
+   - Create:   POST /api/tournaments/:tid/teams   expects { playerAId, playerBId, teamName }
 ------------------------------ */
 
 export default function PlayersPage() {
@@ -79,7 +84,7 @@ export default function PlayersPage() {
   // Teams section
   const [teamsStatus, setTeamsStatus] = useState("idle"); // idle | loading | ok | error
   const [teamsError, setTeamsError] = useState("");
-  const [teams, setTeams] = useState([]);
+  const [teams, setTeams] = useState([]); // normalized to array of {id, name, players?}
 
   // Create team modal
   const [openTeam, setOpenTeam] = useState(false);
@@ -104,21 +109,30 @@ export default function PlayersPage() {
   const [generateError, setGenerateError] = useState("");
 
   /* -----------------------------
-     Load players + optimistic merge
+     Load players + optimistic merge (tournament-safe)
   ------------------------------ */
 
   async function loadPlayers() {
     try {
+      if (!tid) {
+        setPlayers([]);
+        setStatus("ok");
+        return;
+      }
+
       setStatus("loading");
 
-      const res = await fetch(withTid("/api/players"));
+      const res = await fetch(`/api/tournaments/${tid}/players`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const data = await res.json();
-      const serverPlayers = Array.isArray(data) ? data : data.players ?? [];
+      const serverPlayers = await res.json(); // array
 
+      // Only apply optimistic player if it belongs to this tournament
       const optimistic = consumeOptimisticPlayer();
-      if (optimistic) {
+      const optimisticMatchesTid =
+        optimistic && String(optimistic.tournamentId ?? "") === String(tid);
+
+      if (optimisticMatchesTid) {
         setPlayers([
           { ...optimistic, _optimistic: true },
           ...serverPlayers.filter(
@@ -149,11 +163,27 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(withTid("/api/teams"));
-      const data = await res.json().catch(() => []);
+      const res = await fetch(`/api/tournaments/${tid}/teams`);
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
-      setTeams(Array.isArray(data) ? data : []);
+      // Your curl shows: { tournamentId: "9", teams: [{id, name}] }
+      const rawTeams = Array.isArray(data?.teams)
+        ? data.teams
+        : Array.isArray(data)
+        ? data
+        : [];
+
+      // Normalize so UI always uses {id, name, players?}
+      const normalized = rawTeams
+        .map((t) => ({
+          id: String(t.id ?? t.teamId ?? ""),
+          name: t.name ?? t.teamName ?? "",
+          players: Array.isArray(t.players) ? t.players : [], // might be empty if backend doesn't include players
+        }))
+        .filter((t) => t.id);
+
+      setTeams(normalized);
       setTeamsStatus("ok");
     } catch (e) {
       console.error(e);
@@ -185,6 +215,7 @@ export default function PlayersPage() {
 
   /* -----------------------------
      Build set of players already assigned to a team
+     (works if teams endpoint includes players; otherwise will be empty)
   ------------------------------ */
 
   const assignedPlayerIds = useMemo(() => {
@@ -240,6 +271,7 @@ export default function PlayersPage() {
 
   /* -----------------------------
      Create / Delete players
+     (still uses /api/players with ?tournamentId=)
   ------------------------------ */
 
   async function createPlayer() {
@@ -257,6 +289,11 @@ export default function PlayersPage() {
     }
 
     try {
+      if (!tid) {
+        alert("Select a tournament first.");
+        return;
+      }
+
       const res = await fetch(withTid("/api/players"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -295,6 +332,7 @@ export default function PlayersPage() {
 
   /* -----------------------------
      Create Team
+     POST /api/tournaments/:tid/teams expects { playerAId, playerBId, teamName }
   ------------------------------ */
 
   async function createTeam() {
@@ -314,17 +352,14 @@ export default function PlayersPage() {
     setCreateTeamStatus("saving");
 
     try {
-      const payload = {
-        tournamentId: Number(tid),
-        playerAId: Number(teamAId),
-        playerBId: Number(teamBId),
-        name: teamName.trim() || undefined,
-      };
-
-      const res = await fetch(withTid("/api/teams"), {
+      const res = await fetch(`/api/tournaments/${tid}/teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          playerAId: Number(teamAId),
+          playerBId: Number(teamBId),
+          teamName: teamName.trim() || undefined,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -345,8 +380,8 @@ export default function PlayersPage() {
   }
 
   /* -----------------------------
-     Rename Team (safe even if matches exist)
-     Assumes backend supports: PATCH /api/teams/:id { name }
+     Rename Team
+     Uses existing teamsRoutes: PATCH /api/teams/:id { name, tournamentId }
   ------------------------------ */
 
   function openRenameModal(team) {
@@ -365,9 +400,11 @@ export default function PlayersPage() {
       setRenameStatus("error");
       return;
     }
+
     const teamId = renameTeamId;
     const name = renameValue.trim();
     if (!teamId) return;
+
     if (!name) {
       setRenameError("Team name is required.");
       setRenameStatus("error");
@@ -395,8 +432,8 @@ export default function PlayersPage() {
   }
 
   /* -----------------------------
-     Delete Team (trashcan)
-     Assumes backend supports: DELETE /api/teams/:id
+     Delete Team
+     Uses existing teamsRoutes: DELETE /api/teams/:id
   ------------------------------ */
 
   async function deleteTeam(teamId) {
@@ -427,6 +464,7 @@ export default function PlayersPage() {
 
   /* -----------------------------
      Generate Matches (Round Robin)
+     Still uses /api/roundrobin/generate with ?tournamentId=
   ------------------------------ */
 
   async function generateMatches() {
@@ -532,7 +570,11 @@ export default function PlayersPage() {
                 />
               </Box>
 
-              <Button variant="pickle" onClick={() => setOpenPlayer(true)}>
+              <Button
+                variant="pickle"
+                onClick={() => setOpenPlayer(true)}
+                disabled={!tid}
+              >
                 <HStack gap={2}>
                   <Plus size={16} />
                   <Text>New Player</Text>
@@ -571,9 +613,15 @@ export default function PlayersPage() {
                     No players found
                   </Heading>
                   <Text opacity={0.8} mb={5}>
-                    Try a different search, or add your first player.
+                    {tid
+                      ? "Try a different search, or add your first player."
+                      : "Select a tournament first on the Home page."}
                   </Text>
-                  <Button variant="pickle" onClick={() => setOpenPlayer(true)}>
+                  <Button
+                    variant="pickle"
+                    onClick={() => setOpenPlayer(true)}
+                    disabled={!tid}
+                  >
                     Add Player
                   </Button>
                 </Box>
@@ -664,6 +712,7 @@ export default function PlayersPage() {
                   >
                     <Users size={18} />
                   </Box>
+
                   <Heading size="md">Doubles Teams</Heading>
 
                   {teamsStatus === "loading" ? (
@@ -777,6 +826,7 @@ export default function PlayersPage() {
                       {teams.map((t) => (
                         <Table.Row key={t.id}>
                           <Table.Cell fontWeight="700">{t.name}</Table.Cell>
+
                           <Table.Cell>
                             <Text fontWeight="600">
                               {(t.players ?? [])
@@ -785,6 +835,7 @@ export default function PlayersPage() {
                                 .join(" / ") || "—"}
                             </Text>
                           </Table.Cell>
+
                           <Table.Cell textAlign="end">
                             <HStack justify="flex-end" gap={2}>
                               <Button
@@ -902,7 +953,7 @@ export default function PlayersPage() {
                           disabled={!tid || createTeamStatus === "saving"}
                         />
                         <Text fontSize="xs" opacity={0.7}>
-                          Leave blank to auto-name as “Player A / Player B”.
+                          Leave blank to auto-name.
                         </Text>
                       </Stack>
 

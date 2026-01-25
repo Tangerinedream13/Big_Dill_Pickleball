@@ -262,7 +262,7 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
       from tournament_players tpp
       join players p on p.id = tpp.player_id
       where tpp.tournament_id = $1
-      order by p.created_at desc, p.id desc;
+      order by p.id desc;
     `;
     const r = await pool.query(q, [tid]);
 

@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Eraser,
   ChevronsRight,
+  Trophy,
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 
@@ -62,10 +63,13 @@ function last4(name) {
 }
 
 function playersCodeFromTeam(team) {
-  const players = team?.players ?? [];
-  const names = players
-    .map((p) => (typeof p === "string" ? p : p?.name))
-    .filter(Boolean);
+  // Expect shape: { players: [{name}, {name}] }
+  const rawPlayers = team?.players ?? [];
+  const names = Array.isArray(rawPlayers)
+    ? rawPlayers
+        .map((p) => (typeof p === "string" ? p : p?.name))
+        .filter(Boolean)
+    : [];
 
   if (names.length === 0) return "";
 
@@ -83,8 +87,7 @@ function formatTeamDisplay(team) {
   return code ? `${teamName} ${code}` : teamName;
 }
 
-// Local score rules (mirrors your backend intent)
-function validateScore(matchPhase, a, b) {
+function validateScore(phase, a, b) {
   const scoreA = Number(a);
   const scoreB = Number(b);
 
@@ -95,9 +98,9 @@ function validateScore(matchPhase, a, b) {
   if (scoreA === scoreB) return "Ties not supported.";
 
   const diff = Math.abs(scoreA - scoreB);
-  if (diff < 2) return "Team must win by 2.";
+  if (diff < 2) return "Team has to win by 2.";
 
-  const min = matchPhase === "RR" ? 11 : 15;
+  const min = phase === "RR" ? 11 : 15;
   if (Math.max(scoreA, scoreB) < min) {
     return `Game must be played to at least ${min}.`;
   }
@@ -115,34 +118,32 @@ const phaseCollection = createListCollection({
   ],
 });
 
-/* -----------------------------
-   Component
------------------------------- */
-
 export default function MatchSchedule() {
   const navigate = useNavigate();
 
-  // loading | ok | error | no-tournament
-  const [status, setStatus] = useState("loading");
+  const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament
   const [state, setState] = useState(null);
 
-  const [phaseFilter, setPhaseFilter] = useState("ALL"); // ALL | RR | SF | FINAL | THIRD
+  // ✅ Important: teams that include players so we can show (HADD, HADD)
+  const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);
+
+  const [phaseFilter, setPhaseFilter] = useState("ALL");
   const [query, setQuery] = useState("");
 
   // { [matchId]: { scoreA: string, scoreB: string, saving: boolean, error: string|null } }
   const [edits, setEdits] = useState({});
 
-  // reset matches state
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState("");
 
-  // reset playoffs state
   const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
   const [resetPlayoffsError, setResetPlayoffsError] = useState("");
 
-  // advance to semis state
-  const [advancing, setAdvancing] = useState(false);
-  const [advanceError, setAdvanceError] = useState("");
+  const [advancingSemis, setAdvancingSemis] = useState(false);
+  const [advanceSemisError, setAdvanceSemisError] = useState("");
+
+  const [advancingFinals, setAdvancingFinals] = useState(false);
+  const [advanceFinalsError, setAdvanceFinalsError] = useState("");
 
   const tid = getCurrentTournamentId();
 
@@ -152,15 +153,43 @@ export default function MatchSchedule() {
     return u.pathname + u.search;
   }
 
+  async function loadTeamsForDisplay(tournamentId) {
+    if (!tournamentId) {
+      setTeamsWithPlayers([]);
+      return;
+    }
+
+    try {
+      // Prefer the endpoint that returns team + players
+      const res = await fetch(`/api/tournaments/${tournamentId}/teams`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      // Some backends return { teams: [...] }
+      const teams = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.teams)
+        ? data.teams
+        : [];
+      setTeamsWithPlayers(teams);
+    } catch (e) {
+      console.warn("Could not load teams-with-players:", e);
+      // fallback: state.teams may exist but often won’t include players
+      setTeamsWithPlayers(Array.isArray(state?.teams) ? state.teams : []);
+    }
+  }
+
   async function loadState() {
     try {
       setStatus("loading");
       setResetError("");
       setResetPlayoffsError("");
-      setAdvanceError("");
+      setAdvanceSemisError("");
+      setAdvanceFinalsError("");
 
       if (!tid) {
         setState(null);
+        setTeamsWithPlayers([]);
         setEdits({});
         setStatus("no-tournament");
         return;
@@ -169,10 +198,15 @@ export default function MatchSchedule() {
       const res = await fetch(withTid("/api/tournament/state"));
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      if (!res.ok) {
+        throw new Error(data?.error ?? `HTTP ${res.status}`);
+      }
 
       setState(data);
       setStatus("ok");
+
+      // ✅ second fetch gives us player names so we can build (HADD, HADD)
+      await loadTeamsForDisplay(tid);
 
       const all = [
         ...(data.rrMatches ?? []),
@@ -198,135 +232,88 @@ export default function MatchSchedule() {
 
   useEffect(() => {
     setState(null);
+    setTeamsWithPlayers([]);
     setEdits({});
     loadState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tid]);
 
-  // teamsById now stores the whole team object so we can read players
   const teamsById = useMemo(() => {
     const map = new Map();
-    for (const t of state?.teams ?? []) map.set(String(t.id), t);
+    const source = teamsWithPlayers?.length
+      ? teamsWithPlayers
+      : state?.teams ?? [];
+    for (const t of source) map.set(String(t.id), t);
     return map;
-  }, [state]);
+  }, [teamsWithPlayers, state]);
 
-  const teamNameDisplay = useMemo(() => {
+  const teamDisplay = useMemo(() => {
     return (teamId) => {
-      const team = teamsById.get(String(teamId)) ?? null;
-      if (!team) return `Team ${String(teamId)}`;
-      return formatTeamDisplay(team);
+      const t = teamsById.get(String(teamId));
+      if (!t) return `Team ${teamId}`;
+      return formatTeamDisplay(t);
     };
   }, [teamsById]);
 
-  // Seed map (from RR standings top-4)
+  const standings = state?.standings ?? [];
+
   const seedByTeamId = useMemo(() => {
     const map = new Map();
-    const top = (state?.standings ?? []).slice(0, 4);
-    top.forEach((s, idx) => map.set(String(s.teamId), idx + 1));
+    standings.slice(0, 4).forEach((s, idx) => {
+      map.set(String(s.teamId), idx + 1); // 1..4
+    });
     return map;
-  }, [state]);
+  }, [standings]);
 
-  const rrIncompleteMatches = useMemo(() => {
-    const rr = state?.rrMatches ?? [];
-    return rr.filter((m) => !m.winnerId);
-  }, [state]);
+  const rrMatches = useMemo(
+    () => (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" })),
+    [state]
+  );
+  const semis = useMemo(
+    () => (state?.semis ?? []).map((m) => ({ ...m, phase: "SF" })),
+    [state]
+  );
+  const finals = useMemo(
+    () => (state?.finals ?? []).map((m) => ({ ...m })),
+    [state]
+  );
 
   const rrComplete = useMemo(() => {
-    const rr = state?.rrMatches ?? [];
-    return rr.length > 0 && rr.every((m) => m.winnerId);
-  }, [state]);
+    return rrMatches.length > 0 && rrMatches.every((m) => m.winnerId);
+  }, [rrMatches]);
 
-  const semisExist = useMemo(() => (state?.semis ?? []).length > 0, [state]);
-  const finalsExist = useMemo(() => (state?.finals ?? []).length > 0, [state]);
+  const rrIncompleteMatches = useMemo(
+    () => rrMatches.filter((m) => !m.winnerId),
+    [rrMatches]
+  );
+
+  const semisExist = semis.length > 0;
+  const semisComplete = semisExist && semis.every((m) => m.winnerId);
+
+  const finalsExist = finals.length > 0;
+
+  const finalMatch = useMemo(() => {
+    return finals.find((m) => m.phase === "FINAL" || m.id === "FINAL") ?? null;
+  }, [finals]);
+
+  const thirdMatch = useMemo(() => {
+    return finals.find((m) => m.phase === "THIRD" || m.id === "THIRD") ?? null;
+  }, [finals]);
 
   const tournamentComplete = useMemo(() => {
-    const finals = state?.finals ?? [];
-    const finalMatch = finals.find(
-      (m) => m.phase === "FINAL" || m.id === "FINAL"
-    );
-    const thirdMatch = finals.find(
-      (m) => m.phase === "THIRD" || m.id === "THIRD"
-    );
     if (!finalMatch && !thirdMatch) return false;
-
     const finalDone = finalMatch ? !!finalMatch.winnerId : true;
     const thirdDone = thirdMatch ? !!thirdMatch.winnerId : true;
     return finalDone && thirdDone;
-  }, [state]);
+  }, [finalMatch, thirdMatch]);
+
+  const championTeamId = finalMatch?.winnerId ?? null;
+  const championName = championTeamId ? teamDisplay(championTeamId) : "";
 
   const tournamentInProgress = useMemo(() => {
-    const rr = state?.rrMatches?.length ?? 0;
-    const sf = state?.semis?.length ?? 0;
-    const fin = state?.finals?.length ?? 0;
-    return rr + sf + fin > 0 && !tournamentComplete;
-  }, [state, tournamentComplete]);
-
-  const canAdvanceToSemis = useMemo(() => {
-    return (
-      !!tid && rrComplete && !semisExist && !advancing && !tournamentComplete
-    );
-  }, [tid, rrComplete, semisExist, advancing, tournamentComplete]);
-
-  // Compute RR wins/losses for standings table
-  const rrRecordByTeamId = useMemo(() => {
-    const rr = state?.rrMatches ?? [];
-    const map = new Map(); // teamId -> { wins, losses }
-    for (const m of rr) {
-      const a = String(m.teamAId);
-      const b = String(m.teamBId);
-      if (!map.has(a)) map.set(a, { wins: 0, losses: 0 });
-      if (!map.has(b)) map.set(b, { wins: 0, losses: 0 });
-
-      if (!m.winnerId) continue;
-
-      const w = String(m.winnerId);
-      const loser = w === a ? b : a;
-      map.get(w).wins += 1;
-      map.get(loser).losses += 1;
-    }
-    return map;
-  }, [state]);
-
-  const allMatches = useMemo(() => {
-    const rr = (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" }));
-    const sf = (state?.semis ?? []).map((m) => ({ ...m, phase: "SF" }));
-    const finals = (state?.finals ?? []).map((m) => ({ ...m })); // FINAL/THIRD already set
-    return [...rr, ...sf, ...finals];
-  }, [state]);
-
-  // Sort: in-progress first, then by phase order, then id
-  const sortedMatches = useMemo(() => {
-    const phaseOrder = { RR: 0, SF: 1, FINAL: 2, THIRD: 3 };
-    const copy = [...allMatches];
-
-    copy.sort((x, y) => {
-      const xDone = !!x.winnerId;
-      const yDone = !!y.winnerId;
-      if (xDone !== yDone) return xDone ? 1 : -1; // completed at bottom
-
-      const px = phaseOrder[x.phase] ?? 99;
-      const py = phaseOrder[y.phase] ?? 99;
-      if (px !== py) return px - py;
-
-      return String(x.id ?? "").localeCompare(String(y.id ?? ""));
-    });
-
-    return copy;
-  }, [allMatches]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-
-    return sortedMatches.filter((m) => {
-      if (phaseFilter !== "ALL" && m.phase !== phaseFilter) return false;
-      if (!q) return true;
-
-      const a = teamNameDisplay(m.teamAId).toLowerCase();
-      const b = teamNameDisplay(m.teamBId).toLowerCase();
-      const id = String(m.id ?? "").toLowerCase();
-      return a.includes(q) || b.includes(q) || id.includes(q);
-    });
-  }, [sortedMatches, phaseFilter, query, teamNameDisplay]);
+    const count = rrMatches.length + semis.length + finals.length;
+    return count > 0 && !tournamentComplete;
+  }, [rrMatches, semis, finals, tournamentComplete]);
 
   function setScore(matchId, side, value) {
     setEdits((prev) => ({
@@ -338,7 +325,7 @@ export default function MatchSchedule() {
           saving: false,
           error: null,
         }),
-        [side]: String(value).replace(/[^\d]/g, ""), // digits only
+        [side]: String(value).replace(/[^\d]/g, ""),
         error: null,
       },
     }));
@@ -394,11 +381,11 @@ export default function MatchSchedule() {
       return;
     }
 
-    const localError = validateScore(match.phase, scoreA, scoreB);
-    if (localError) {
+    const err = validateScore(match.phase, scoreA, scoreB);
+    if (err) {
       setEdits((prev) => ({
         ...prev,
-        [matchId]: { ...prev[matchId], error: localError },
+        [matchId]: { ...prev[matchId], error: err },
       }));
       return;
     }
@@ -449,8 +436,9 @@ export default function MatchSchedule() {
     }
     if (
       !confirm("Reset ALL matches for this tournament? This cannot be undone.")
-    )
+    ) {
       return;
+    }
 
     setResetting(true);
     try {
@@ -479,8 +467,9 @@ export default function MatchSchedule() {
       !confirm(
         "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
       )
-    )
+    ) {
       return;
+    }
 
     setResettingPlayoffs(true);
     try {
@@ -499,142 +488,222 @@ export default function MatchSchedule() {
   }
 
   async function advanceToSemis() {
-    setAdvanceError("");
+    setAdvanceSemisError("");
 
     if (!tid) {
-      setAdvanceError("No tournament selected.");
-      return;
-    }
-    if (tournamentComplete) {
-      setAdvanceError("Tournament is complete.");
+      setAdvanceSemisError("No tournament selected.");
       return;
     }
 
     if (!rrComplete) {
       const missing = rrIncompleteMatches.map((m) => m.id).join(", ");
-      setAdvanceError(
+      setAdvanceSemisError(
         `Round robin isn't complete yet. Score these matches first: ${missing}`
       );
       return;
     }
 
     if (semisExist) {
-      setAdvanceError(
+      setAdvanceSemisError(
         "Semifinals already exist. Use Reset Playoffs if you want to regenerate."
       );
       return;
     }
 
-    setAdvancing(true);
+    setAdvancingSemis(true);
     try {
       const res = await fetch(withTid("/api/playoffs/generate"), {
         method: "POST",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
       await loadState();
       setPhaseFilter("SF");
       setQuery("");
     } catch (e) {
       console.error(e);
-      setAdvanceError(e?.message || "Could not generate semifinals.");
+      setAdvanceSemisError(e?.message || "Could not generate semifinals.");
     } finally {
-      setAdvancing(false);
+      setAdvancingSemis(false);
     }
   }
 
-  const standings = state?.standings ?? [];
+  // ✅ “Advance to Finals” — best-effort:
+  // - If finals already exist: just switch filter
+  // - If semis not complete: show message
+  // - If semis complete but finals missing: tell user to refresh (or backend auto-creates finals on 2nd semi score)
+  async function advanceToFinals() {
+    setAdvanceFinalsError("");
+
+    if (!tid) {
+      setAdvanceFinalsError("No tournament selected.");
+      return;
+    }
+
+    if (finalsExist) {
+      setPhaseFilter("FINAL");
+      setQuery("");
+      return;
+    }
+
+    if (!semisExist) {
+      setAdvanceFinalsError(
+        "Semifinals don't exist yet. Advance to Semis first."
+      );
+      return;
+    }
+
+    if (!semisComplete) {
+      setAdvanceFinalsError(
+        "Semifinals aren’t complete yet. Enter both semi scores first."
+      );
+      return;
+    }
+
+    // If your backend auto-generates finals after both semis are scored,
+    // a refresh will pull them in.
+    setAdvancingFinals(true);
+    try {
+      await loadState();
+      if (!(state?.finals ?? []).length) {
+        setAdvanceFinalsError(
+          "Finals should appear after both semis are scored. If they still don’t show up, your backend needs to create FINAL and THIRD matches when semis complete."
+        );
+      } else {
+        setPhaseFilter("FINAL");
+        setQuery("");
+      }
+    } finally {
+      setAdvancingFinals(false);
+    }
+  }
+
+  const allMatches = useMemo(() => {
+    const list = [...rrMatches, ...semis, ...finals];
+    // In-progress first; completed at bottom
+    list.sort((a, b) => {
+      const aDone = !!a.winnerId;
+      const bDone = !!b.winnerId;
+      if (aDone !== bDone) return aDone ? 1 : -1;
+
+      const order = { RR: 0, SF: 1, FINAL: 2, THIRD: 3 };
+      const pa = order[a.phase] ?? 99;
+      const pb = order[b.phase] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+    });
+    return list;
+  }, [rrMatches, semis, finals]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return allMatches.filter((m) => {
+      if (phaseFilter !== "ALL" && m.phase !== phaseFilter) return false;
+      if (!q) return true;
+
+      const a = teamDisplay(m.teamAId).toLowerCase();
+      const b = teamDisplay(m.teamBId).toLowerCase();
+      const id = String(m.id ?? "").toLowerCase();
+      return a.includes(q) || b.includes(q) || id.includes(q);
+    });
+  }, [allMatches, phaseFilter, query, teamDisplay]);
+
+  function winnerText(m) {
+    if (!m.winnerId) return "—";
+    const a = teamDisplay(m.teamAId);
+    const b = teamDisplay(m.teamBId);
+    return String(m.winnerId) === String(m.teamAId) ? a : b;
+  }
+
+  function displayTeamForMatch(m, teamId) {
+    const base = teamDisplay(teamId);
+
+    // ✅ Add seeds only for semifinals (1..4)
+    if (m.phase === "SF") {
+      const seed = seedByTeamId.get(String(teamId));
+      if (seed) return `${seed}. ${base}`;
+    }
+
+    return base;
+  }
+
+  const stickyBg = "cream.50"; // opaque
+  const stickyBorder = "1px solid";
+  const stickyBorderColor = "border";
 
   return (
-    <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
-      <Container maxW="6xl">
-        <Stack gap={6}>
-          {/* Sticky Header / Banner */}
-          <Box
-            position="sticky"
-            top="0"
-            zIndex={10}
-            bg="cream.50"
-            pt={1}
-            pb={3}
-          >
+    <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
+      {/* ✅ Sticky header wrapper (opaque) */}
+      <Box
+        position="sticky"
+        top="0"
+        zIndex={50}
+        bg={stickyBg}
+        borderBottom={stickyBorder}
+        borderColor={stickyBorderColor}
+        boxShadow="sm"
+      >
+        <Container maxW="6xl" py={{ base: 4, md: 5 }}>
+          <Stack gap={3}>
             <Flex
               align={{ base: "stretch", md: "center" }}
               justify="space-between"
               direction={{ base: "column", md: "row" }}
-              gap={4}
+              gap={3}
             >
-              <Stack gap={1}>
-                <HStack gap={3} wrap="wrap">
-                  {/* Home icon (no extra component needed) */}
-                  <IconButton
-                    aria-label="Home"
-                    variant="outline"
-                    onClick={() => navigate("/")}
-                  >
-                    <Home size={18} />
-                  </IconButton>
+              <HStack gap={3} wrap="wrap">
+                <IconButton
+                  aria-label="Home"
+                  variant="outline"
+                  onClick={() => navigate("/")}
+                >
+                  <Home size={18} />
+                </IconButton>
 
-                  <Box
-                    w="36px"
-                    h="36px"
-                    borderRadius="12px"
-                    bg="club.100"
-                    display="grid"
-                    placeItems="center"
-                    border="1px solid"
-                    borderColor="border"
-                  >
-                    <CalendarDays size={18} />
-                  </Box>
+                <Box
+                  w="36px"
+                  h="36px"
+                  borderRadius="12px"
+                  bg="club.100"
+                  display="grid"
+                  placeItems="center"
+                  border="1px solid"
+                  borderColor="border"
+                >
+                  <CalendarDays size={18} />
+                </Box>
 
-                  <Heading size="lg" letterSpacing="-0.02em">
-                    Match Schedule
-                  </Heading>
+                <Heading size="lg" letterSpacing="-0.02em">
+                  Match Schedule
+                </Heading>
 
-                  {status === "loading" && (
-                    <Badge variant="club">Loading…</Badge>
-                  )}
-                  {status === "no-tournament" && (
-                    <Badge variant="club">No tournament selected</Badge>
-                  )}
-                  {status === "error" && (
-                    <Badge variant="club">Backend issue</Badge>
-                  )}
-                  {status === "ok" && (
-                    <Badge variant="pickle">{filtered.length} matches</Badge>
-                  )}
+                {status === "loading" && <Badge variant="club">Loading…</Badge>}
+                {status === "no-tournament" && (
+                  <Badge variant="club">No tournament selected</Badge>
+                )}
+                {status === "error" && (
+                  <Badge variant="club">Backend issue</Badge>
+                )}
+                {status === "ok" && (
+                  <Badge variant="pickle">{filtered.length} matches</Badge>
+                )}
 
-                  {/* Lifecycle badges */}
-                  {tid && status === "ok" ? (
-                    <>
-                      <Badge variant={rrComplete ? "pickle" : "club"}>
-                        RR {rrComplete ? "Complete" : "In Progress"}
-                      </Badge>
-                      <Badge variant={semisExist ? "pickle" : "club"}>
-                        Semis {semisExist ? "Ready" : "—"}
-                      </Badge>
-                      <Badge variant={finalsExist ? "pickle" : "club"}>
-                        Finals {finalsExist ? "Ready" : "—"}
-                      </Badge>
+                {tid && status === "ok" ? (
+                  <>
+                    <Badge variant={tournamentInProgress ? "pickle" : "club"}>
+                      Tournament In Progress{" "}
+                      <Box as="span" ml={2} color="green.500">
+                        ●
+                      </Box>
+                    </Badge>
 
-                      {tournamentInProgress ? (
-                        <Badge variant="club">Tournament In Progress 🟢</Badge>
-                      ) : null}
-
-                      {tournamentComplete ? (
-                        <Badge variant="pickle">Tournament Complete ✅</Badge>
-                      ) : null}
-                    </>
-                  ) : null}
-                </HStack>
-
-                <Text opacity={0.85} maxW="70ch">
-                  Enter scores for round robin and playoffs.
-                  {tournamentComplete ? " (Scores are locked.)" : ""}
-                </Text>
-              </Stack>
+                    {tournamentComplete ? (
+                      <Badge variant="pickle">Tournament Complete ✅</Badge>
+                    ) : null}
+                  </>
+                ) : null}
+              </HStack>
 
               <HStack
                 gap={2}
@@ -644,11 +713,32 @@ export default function MatchSchedule() {
                 <Button
                   variant="outline"
                   onClick={advanceToSemis}
-                  disabled={!canAdvanceToSemis}
+                  disabled={
+                    !tid ||
+                    advancingSemis ||
+                    tournamentComplete ||
+                    semisExist ||
+                    !rrComplete
+                  }
                 >
                   <HStack gap={2}>
                     <ChevronsRight size={16} />
-                    <Text>{advancing ? "Advancing…" : "Advance to Semis"}</Text>
+                    <Text>
+                      {advancingSemis ? "Advancing…" : "Advance to Semis"}
+                    </Text>
+                  </HStack>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={advanceToFinals}
+                  disabled={!tid || advancingFinals || tournamentComplete}
+                >
+                  <HStack gap={2}>
+                    <ChevronsRight size={16} />
+                    <Text>
+                      {advancingFinals ? "Advancing…" : "Advance to Finals"}
+                    </Text>
                   </HStack>
                 </Button>
 
@@ -678,51 +768,95 @@ export default function MatchSchedule() {
               </HStack>
             </Flex>
 
-            {/* Errors under banner */}
-            <Stack mt={3} gap={2}>
-              {advanceError ? (
-                <Box
-                  border="1px solid"
-                  borderColor="red.200"
-                  bg="red.50"
-                  p={3}
-                  borderRadius="lg"
-                >
-                  <Text color="red.700" fontSize="sm">
-                    {advanceError}
-                  </Text>
-                </Box>
-              ) : null}
+            <Text opacity={0.85}>
+              Enter scores for round robin and playoffs.
+            </Text>
 
-              {resetPlayoffsError ? (
-                <Box
-                  border="1px solid"
-                  borderColor="red.200"
-                  bg="red.50"
-                  p={3}
-                  borderRadius="lg"
-                >
-                  <Text color="red.700" fontSize="sm">
-                    {resetPlayoffsError}
+            {tournamentComplete ? (
+              <Box
+                border="1px solid"
+                borderColor="green.200"
+                bg="green.50"
+                p={3}
+                borderRadius="lg"
+              >
+                <HStack justify="space-between" wrap="wrap" gap={2}>
+                  <HStack gap={2}>
+                    <Trophy size={18} />
+                    <Text fontWeight="800">
+                      Tournament Complete{championName ? ":" : ""}
+                    </Text>
+                    {championName ? (
+                      <Text fontWeight="700">{championName}</Text>
+                    ) : null}
+                  </HStack>
+                  <Text fontSize="sm" opacity={0.75}>
+                    Scores are locked.
                   </Text>
-                </Box>
-              ) : null}
+                </HStack>
+              </Box>
+            ) : null}
+          </Stack>
+        </Container>
+      </Box>
 
-              {resetError ? (
-                <Box
-                  border="1px solid"
-                  borderColor="red.200"
-                  bg="red.50"
-                  p={3}
-                  borderRadius="lg"
-                >
-                  <Text color="red.700" fontSize="sm">
-                    {resetError}
-                  </Text>
-                </Box>
-              ) : null}
-            </Stack>
-          </Box>
+      <Container maxW="6xl" pt={{ base: 6, md: 7 }}>
+        <Stack gap={6}>
+          {advanceSemisError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {advanceSemisError}
+              </Text>
+            </Box>
+          ) : null}
+
+          {advanceFinalsError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {advanceFinalsError}
+              </Text>
+            </Box>
+          ) : null}
+
+          {resetPlayoffsError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {resetPlayoffsError}
+              </Text>
+            </Box>
+          ) : null}
+
+          {resetError ? (
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
+              <Text color="red.700" fontSize="sm">
+                {resetError}
+              </Text>
+            </Box>
+          ) : null}
 
           {/* Standings */}
           {tid && status === "ok" && standings.length > 0 ? (
@@ -753,17 +887,20 @@ export default function MatchSchedule() {
                   </Table.Header>
                   <Table.Body>
                     {standings.map((s, idx) => {
-                      const name = teamNameDisplay(s.teamId);
-                      const rec = rrRecordByTeamId.get(String(s.teamId)) ?? {
-                        wins: s.wins ?? 0,
-                        losses: 0,
-                      };
+                      const played = s.gamesPlayed ?? s.played ?? null;
+                      const losses =
+                        played != null
+                          ? Math.max(0, Number(played) - Number(s.wins ?? 0))
+                          : "—";
+
                       return (
                         <Table.Row key={String(s.teamId)}>
                           <Table.Cell>{idx + 1}</Table.Cell>
-                          <Table.Cell fontWeight="600">{name}</Table.Cell>
-                          <Table.Cell>{rec.wins}</Table.Cell>
-                          <Table.Cell>{rec.losses}</Table.Cell>
+                          <Table.Cell fontWeight="600">
+                            {teamDisplay(s.teamId)}
+                          </Table.Cell>
+                          <Table.Cell>{s.wins}</Table.Cell>
+                          <Table.Cell>{losses}</Table.Cell>
                           <Table.Cell>{s.pointDiff}</Table.Cell>
                         </Table.Row>
                       );
@@ -798,7 +935,6 @@ export default function MatchSchedule() {
                     <Select.Trigger maxW="240px">
                       <Select.ValueText placeholder="All phases" />
                     </Select.Trigger>
-
                     <Select.Content>
                       {phaseCollection.items.map((item) => (
                         <Select.Item key={item.value} item={item}>
@@ -831,7 +967,7 @@ export default function MatchSchedule() {
             </Card.Body>
           </Card.Root>
 
-          {/* Table */}
+          {/* Matches table */}
           <Card.Root>
             <Card.Body>
               {!tid ? (
@@ -900,20 +1036,8 @@ export default function MatchSchedule() {
                     {filtered.map((m) => {
                       const phaseMeta = labelForPhase(m.phase);
 
-                      const aSeed = seedByTeamId.get(String(m.teamAId));
-                      const bSeed = seedByTeamId.get(String(m.teamBId));
-
-                      const aNameBase = teamNameDisplay(m.teamAId);
-                      const bNameBase = teamNameDisplay(m.teamBId);
-
-                      const aName =
-                        m.phase === "SF" && aSeed
-                          ? `(${aSeed}) ${aNameBase}`
-                          : aNameBase;
-                      const bName =
-                        m.phase === "SF" && bSeed
-                          ? `(${bSeed}) ${bNameBase}`
-                          : bNameBase;
+                      const aName = displayTeamForMatch(m, m.teamAId);
+                      const bName = displayTeamForMatch(m, m.teamBId);
 
                       const row = edits[m.id] ?? {
                         scoreA: "",
@@ -922,14 +1046,7 @@ export default function MatchSchedule() {
                         error: null,
                       };
 
-                      const winner =
-                        m.winnerId == null
-                          ? "—"
-                          : String(m.winnerId) === String(m.teamAId)
-                          ? aNameBase
-                          : bNameBase;
-
-                      const inputsDisabled = !tid || tournamentComplete;
+                      const locked = tournamentComplete;
 
                       return (
                         <Table.Row key={`${m.phase}-${m.id}`}>
@@ -956,7 +1073,7 @@ export default function MatchSchedule() {
                               onChange={(e) =>
                                 setScore(m.id, "scoreA", e.target.value)
                               }
-                              disabled={inputsDisabled}
+                              disabled={!tid || locked}
                             />
                           </Table.Cell>
 
@@ -968,12 +1085,12 @@ export default function MatchSchedule() {
                               onChange={(e) =>
                                 setScore(m.id, "scoreB", e.target.value)
                               }
-                              disabled={inputsDisabled}
+                              disabled={!tid || locked}
                             />
                           </Table.Cell>
 
                           <Table.Cell>
-                            <Text fontWeight="600">{winner}</Text>
+                            <Text fontWeight="600">{winnerText(m)}</Text>
                             {row.error ? (
                               <Text fontSize="xs" color="red.600">
                                 {row.error}
@@ -985,11 +1102,11 @@ export default function MatchSchedule() {
                             <Button
                               variant="pickle"
                               onClick={() => saveMatch(m)}
-                              disabled={inputsDisabled || !!row.saving}
+                              disabled={!tid || !!row.saving || locked}
                             >
                               <HStack gap={2}>
                                 <Save size={16} />
-                                <Text>Save</Text>
+                                <Text>{locked ? "Locked" : "Save"}</Text>
                               </HStack>
                             </Button>
                           </Table.Cell>
@@ -1001,6 +1118,67 @@ export default function MatchSchedule() {
               )}
             </Card.Body>
           </Card.Root>
+
+          {/* Finals quick summary (improves finals section labeling/visibility) */}
+          {tid && status === "ok" && finalsExist ? (
+            <Card.Root>
+              <Card.Body>
+                <Heading size="sm" mb={3}>
+                  Finals
+                </Heading>
+
+                <Stack gap={3}>
+                  {finalMatch ? (
+                    <Box
+                      border="1px solid"
+                      borderColor="border"
+                      borderRadius="xl"
+                      p={4}
+                      bg="white"
+                    >
+                      <HStack justify="space-between" wrap="wrap">
+                        <Badge variant="pickle">Final</Badge>
+                        <Text fontSize="sm" opacity={0.7}>
+                          {finalMatch.id}
+                        </Text>
+                      </HStack>
+                      <Text mt={2} fontWeight="700">
+                        {teamDisplay(finalMatch.teamAId)} vs{" "}
+                        {teamDisplay(finalMatch.teamBId)}
+                      </Text>
+                      <Text mt={1} opacity={0.85}>
+                        Winner: <b>{winnerText(finalMatch)}</b>
+                      </Text>
+                    </Box>
+                  ) : null}
+
+                  {thirdMatch ? (
+                    <Box
+                      border="1px solid"
+                      borderColor="border"
+                      borderRadius="xl"
+                      p={4}
+                      bg="white"
+                    >
+                      <HStack justify="space-between" wrap="wrap">
+                        <Badge variant="club">Third Place</Badge>
+                        <Text fontSize="sm" opacity={0.7}>
+                          {thirdMatch.id}
+                        </Text>
+                      </HStack>
+                      <Text mt={2} fontWeight="700">
+                        {teamDisplay(thirdMatch.teamAId)} vs{" "}
+                        {teamDisplay(thirdMatch.teamBId)}
+                      </Text>
+                      <Text mt={1} opacity={0.85}>
+                        Winner: <b>{winnerText(thirdMatch)}</b>
+                      </Text>
+                    </Box>
+                  ) : null}
+                </Stack>
+              </Card.Body>
+            </Card.Root>
+          ) : null}
         </Stack>
       </Container>
     </Box>

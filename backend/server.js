@@ -235,7 +235,7 @@ app.get("/api/message", (req, res) => {
 });
 
 /* =========================================================
-   ✅ NEW: Tournament-scoped Players + Team Creation (Option A)
+   NEW: Tournament-scoped Players + Team Creation (Option A)
 ========================================================= */
 
 // GET players in a specific tournament, including whether they are already on a team
@@ -262,7 +262,7 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
       from tournament_players tpp
       join players p on p.id = tpp.player_id
       where tpp.tournament_id = $1
-      order by p.created_at desc, p.id desc;
+      order by p.id desc;
     `;
     const r = await pool.query(q, [tid]);
 
@@ -375,43 +375,6 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
     res.status(400).json({ error: errToMessage(err) });
   } finally {
     client.release();
-  }
-});
-
-// Optional: list teams + members for a tournament
-app.get("/api/tournaments/:tid/teams", async (req, res) => {
-  const tid = Number(req.params.tid);
-  if (!Number.isInteger(tid) || tid <= 0) {
-    return res.status(400).json({ error: "Invalid tournament id." });
-  }
-
-  try {
-    const q = `
-      select
-        t.id as "teamId",
-        t.name as "teamName",
-        json_agg(
-          json_build_object(
-            'id', p.id,
-            'name', p.name,
-            'email', p.email,
-            'duprRating', p.dupr_rating
-          )
-          order by p.id
-        ) as "players"
-      from tournament_teams tt
-      join teams t on t.id = tt.team_id
-      join team_players tp on tp.team_id = t.id
-      join players p on p.id = tp.player_id
-      where tt.tournament_id = $1
-      group by t.id, t.name
-      order by t.id;
-    `;
-    const r = await pool.query(q, [tid]);
-    res.json(r.rows);
-  } catch (err) {
-    console.error("GET /api/tournaments/:tid/teams error:", err);
-    res.status(500).json({ error: errToMessage(err) });
   }
 });
 

@@ -1,27 +1,20 @@
+// backend/routes/tournaments.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 
+function errToMessage(err) {
+  if (!err) return "Unknown error";
+  if (typeof err === "string") return err;
+  return err.message || err.detail || err.hint || err.code || JSON.stringify(err);
+}
+
 function parseId(v) {
   const n = Number(v);
-  return Number.isInteger(n) && n > 0 ? String(n) : null;
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-async function getTeamsForTournament(tournamentId) {
-  const r = await pool.query(
-    `
-    select teams.id, teams.name
-    from tournament_teams tt
-    join teams on teams.id = tt.team_id
-    where tt.tournament_id = $1
-    order by coalesce(tt.seed, 999999), teams.id;
-    `,
-    [tournamentId]
-  );
-  return r.rows;
-}
-
-// ------------------ TOURNAMENTS ------------------
+/* ------------------ TOURNAMENTS ------------------ */
 
 // GET /api/tournaments
 router.get("/", async (req, res) => {
@@ -36,7 +29,7 @@ router.get("/", async (req, res) => {
     res.json(r.rows);
   } catch (err) {
     console.error("GET /api/tournaments error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
@@ -58,88 +51,186 @@ router.post("/", async (req, res) => {
     res.status(201).json(inserted.rows[0]);
   } catch (err) {
     console.error("POST /api/tournaments error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
+    res.status(500).json({ error: errToMessage(err) });
   }
 });
 
-// ------------------ TOURNAMENT TEAMS ------------------
+/* ------------------ OPTION A: TOURNAMENT DOUBLES TEAMS ------------------ */
+/**
+ * Shape returned from GET must match PlayersPage.jsx:
+ * [
+ *   { id, name, players: [{id,name,email,duprRating}, ...] },
+ *   ...
+ * ]
+ */
 
-// GET /api/tournaments/:id/teams
+// GET /api/tournaments/:id/teams  (list doubles teams + members)
 router.get("/:id/teams", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+
   try {
-    const tournamentId = parseId(req.params.id);
-    if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
-
-    const teams = await getTeamsForTournament(tournamentId);
-    res.json({ tournamentId, teams });
-  } catch (err) {
-    console.error("GET /api/tournaments/:id/teams error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
-  }
-});
-
-// POST /api/tournaments/:id/teams
-// Body: { teamIds: [7, 8, 9] }
-router.post("/:id/teams", async (req, res) => {
-  try {
-    const tournamentId = parseId(req.params.id);
-    if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
-
-    const teamIdsRaw = Array.isArray(req.body?.teamIds) ? req.body.teamIds : [];
-    if (teamIdsRaw.length === 0) {
-      return res.status(400).json({ error: "teamIds is required." });
-    }
-
-    const values = [];
-    const params = [];
-    let i = 1;
-
-    for (const tid of teamIdsRaw) {
-      const teamId = parseId(tid);
-      if (!teamId) continue;
-
-      values.push(`($${i++}, $${i++})`);
-      params.push(tournamentId, teamId);
-    }
-
-    if (values.length === 0) {
-      return res.status(400).json({ error: "No valid teamIds provided." });
-    }
-
-    await pool.query(
+    const r = await pool.query(
       `
-      insert into tournament_teams (tournament_id, team_id)
-      values ${values.join(", ")}
-      on conflict do nothing;
+      select
+        t.id as id,
+        t.name as name,
+        coalesce(
+          json_agg(
+            json_build_object(
+              'id', p.id,
+              'name', p.name,
+              'email', p.email,
+              'duprRating', p.dupr_rating
+            )
+            order by p.id
+          ) filter (where p.id is not null),
+          '[]'::json
+        ) as players
+      from tournament_teams tt
+      join teams t on t.id = tt.team_id
+      left join team_players tp on tp.team_id = t.id
+      left join players p on p.id = tp.player_id
+      where tt.tournament_id = $1
+      group by t.id, t.name
+      order by t.id;
       `,
-      params
+      [tournamentId]
     );
 
-    const teams = await getTeamsForTournament(tournamentId);
-    res.status(201).json({ tournamentId, teams });
+    res.json(r.rows);
   } catch (err) {
+    console.error("GET /api/tournaments/:id/teams error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// POST /api/tournaments/:id/teams  (create doubles team)
+router.post("/:id/teams", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  const playerAId = parseId(req.body?.playerAId);
+  const playerBId = parseId(req.body?.playerBId);
+  const requestedName = (req.body?.teamName ?? "").toString().trim();
+
+  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+  if (!playerAId || !playerBId)
+    return res.status(400).json({ error: "playerAId and playerBId are required." });
+  if (playerAId === playerBId)
+    return res.status(400).json({ error: "Pick two different players." });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Guard: both players must be in this tournament
+    const inTournament = await client.query(
+      `
+      select count(*)::int as c
+      from tournament_players
+      where tournament_id = $1
+        and player_id in ($2, $3);
+      `,
+      [tournamentId, playerAId, playerBId]
+    );
+
+    if (inTournament.rows?.[0]?.c !== 2) {
+      throw new Error("Both players must be signed up for this tournament.");
+    }
+
+    // Guard: neither player can already be on a team in this tournament
+    const alreadyOnTeam = await client.query(
+      `
+      select tp.player_id
+      from team_players tp
+      join tournament_teams tt on tt.team_id = tp.team_id
+      where tt.tournament_id = $1
+        and tp.player_id in ($2, $3)
+      limit 1;
+      `,
+      [tournamentId, playerAId, playerBId]
+    );
+
+    if (alreadyOnTeam.rowCount > 0) {
+      throw new Error("One of those players is already on a team in this tournament.");
+    }
+
+    // Auto-name if not provided
+    let finalName = requestedName;
+    if (!finalName) {
+      const n = await client.query(
+        `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
+        [tournamentId]
+      );
+      finalName = `T-${tournamentId}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
+    }
+
+    // Create team
+    const teamRow = await client.query(
+      `insert into teams(name) values ($1) returning id, name;`,
+      [finalName]
+    );
+    const teamId = teamRow.rows[0].id;
+
+    // Link players to team
+    await client.query(
+      `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
+      [teamId, playerAId, playerBId]
+    );
+
+    // Add team to tournament
+    await client.query(
+      `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
+      [tournamentId, teamId]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      ok: true,
+      tournamentId,
+      team: { id: teamId, name: finalName },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
     console.error("POST /api/tournaments/:id/teams error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
+    res.status(400).json({ error: errToMessage(err) });
+  } finally {
+    client.release();
   }
 });
 
 // DELETE /api/tournaments/:id/teams/:teamId
+// Removes the team from THIS tournament and cleans up the team + team_players.
 router.delete("/:id/teams/:teamId", async (req, res) => {
-  try {
-    const tournamentId = parseId(req.params.id);
-    const teamId = parseId(req.params.teamId);
-    if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
-    if (!teamId) return res.status(400).json({ error: "Invalid team id." });
+  const tournamentId = parseId(req.params.id);
+  const teamId = parseId(req.params.teamId);
+  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+  if (!teamId) return res.status(400).json({ error: "Invalid team id." });
 
-    await pool.query(
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Remove link to tournament
+    await client.query(
       `delete from tournament_teams where tournament_id = $1 and team_id = $2;`,
       [tournamentId, teamId]
     );
 
+    // Remove team players
+    await client.query(`delete from team_players where team_id = $1;`, [teamId]);
+
+    // Remove team (safe if teams are only used in one tournament)
+    await client.query(`delete from teams where id = $1;`, [teamId]);
+
+    await client.query("COMMIT");
     res.json({ ok: true, tournamentId, teamId });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("DELETE /api/tournaments/:id/teams/:teamId error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
+    res.status(500).json({ error: errToMessage(err) });
+  } finally {
+    client.release();
   }
 });
 

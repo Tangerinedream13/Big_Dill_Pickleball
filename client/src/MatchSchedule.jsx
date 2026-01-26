@@ -111,6 +111,18 @@ function validateScore(phase, a, b) {
   return null;
 }
 
+// ✅ Forfeit/scratch detection:
+// winnerId exists but scores are null/undefined/"" -> this was scratched/forfeited
+function isForfeitRR(match) {
+  if (match?.phase !== "RR") return false;
+  if (!match?.winnerId) return false;
+  const aEmpty =
+    match.scoreA === null || match.scoreA === undefined || match.scoreA === "";
+  const bEmpty =
+    match.scoreB === null || match.scoreB === undefined || match.scoreB === "";
+  return aEmpty && bEmpty;
+}
+
 const phaseCollection = createListCollection({
   items: [
     { label: "All phases", value: "ALL" },
@@ -369,13 +381,13 @@ export default function MatchSchedule() {
       return;
     }
 
-    // ✅ If RR match already has a winner (scored or scratched), treat as locked.
+    // ✅ RR match lock once winner exists (scored OR forfeited)
     if (match.phase === "RR" && match.winnerId) {
       setEdits((prev) => ({
         ...prev,
         [matchId]: {
           ...prev[matchId],
-          error: "This RR match is already complete (scored or scratched).",
+          error: "This RR match is already complete (scored or forfeited).",
         },
       }));
       return;
@@ -547,7 +559,7 @@ export default function MatchSchedule() {
       return;
     }
 
-    // ✅ Gray out / block during Round Robin phase (match Advance-to-Semis behavior)
+    // ✅ Finals require semis
     if (!semisExist) {
       setAdvanceFinalsError(
         "Finals come after Semifinals. Advance to Semis first."
@@ -1108,11 +1120,16 @@ export default function MatchSchedule() {
                         error: null,
                       };
 
-                      // ✅ Lock completed matches (scored OR scratched) + tournament complete
+                      const forfeited = isForfeitRR(m);
+
+                      // ✅ Lock completed matches (scored OR forfeited) + tournament complete
                       const locked = tournamentComplete || !!m.winnerId;
 
                       return (
-                        <Table.Row key={`${m.phase}-${m.id}`}>
+                        <Table.Row
+                          key={`${m.phase}-${m.id}`}
+                          bg={forfeited ? "gray.50" : undefined}
+                        >
                           <Table.Cell>
                             <Badge variant={phaseMeta.variant}>
                               {phaseMeta.label}
@@ -1154,6 +1171,14 @@ export default function MatchSchedule() {
 
                           <Table.Cell>
                             <Text fontWeight="600">{winnerText(m)}</Text>
+
+                            {forfeited ? (
+                              <HStack mt={1} gap={1.5} opacity={0.85}>
+                                <Flag size={14} />
+                                <Text fontSize="xs">Forfeit</Text>
+                              </HStack>
+                            ) : null}
+
                             {row.error ? (
                               <Text fontSize="xs" color="red.600">
                                 {row.error}
@@ -1341,7 +1366,7 @@ export default function MatchSchedule() {
                       !scratchMatch.teamAId
                     }
                   >
-                    Winner: Team A
+                    Winner: Team A — {teamDisplay(scratchMatch?.teamAId)}
                   </Button>
 
                   <Button
@@ -1353,7 +1378,7 @@ export default function MatchSchedule() {
                       !scratchMatch.teamBId
                     }
                   >
-                    Winner: Team B
+                    Winner: Team B — {teamDisplay(scratchMatch?.teamBId)}
                   </Button>
                 </HStack>
               </Dialog.Footer>

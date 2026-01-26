@@ -791,7 +791,7 @@ export default function MatchSchedule() {
                   <HStack gap={2}>
                     <Trophy size={18} />
                     <Text fontWeight="800">
-                      Tournament Complete{championName ? ":" : ""}
+                      Tournament Complete{championName ? ": Winners" : ""}
                     </Text>
                     {championName ? (
                       <Text fontWeight="700">{championName}</Text>

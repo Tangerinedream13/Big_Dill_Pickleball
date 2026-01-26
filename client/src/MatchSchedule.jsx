@@ -668,18 +668,20 @@ export default function MatchSchedule() {
                   <Home size={18} />
                 </IconButton>
 
-                <Box
-                  w="36px"
-                  h="36px"
-                  borderRadius="12px"
-                  bg="club.100"
-                  display="grid"
-                  placeItems="center"
-                  border="1px solid"
-                  borderColor="border"
+                <IconButton
+                  aria-label="Calendar"
+                  variant="ghost"
+                  p={0}
+                  minW="auto"
+                  h="auto"
+                  bg="transparent"
+                  border="none"
+                  _hover={{ bg: "transparent" }}
+                  _active={{ bg: "transparent" }}
+                  _focusVisible={{ boxShadow: "none" }}
                 >
                   <CalendarDays size={18} />
-                </Box>
+                </IconButton>
 
                 <Heading size="lg" letterSpacing="-0.02em">
                   Match Schedule

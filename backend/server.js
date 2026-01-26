@@ -29,6 +29,23 @@ function errToMessage(err) {
   );
 }
 
+// --- DUPR helpers (keep above routes) ---
+function parseDupr(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function duprLabel(dupr) {
+  const n = parseDupr(dupr);
+  if (n == null) return "Unrated";
+  if (n >= 5.0) return "Elite (5.0+)";
+  if (n >= 4.0) return "Advanced (4.0–4.99)";
+  if (n >= 3.0) return "Intermediate (3.0–3.99)";
+  if (n >= 2.0) return "Beginner (2.0–2.99)";
+  return "New (under 2.0)";
+}
+
 // ------------------ SCORE VALIDATION (Pickleball) ------------------
 function validatePickleballScore(
   scoreA,

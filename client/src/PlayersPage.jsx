@@ -58,7 +58,6 @@ function formatDupr(dupr) {
    Players Page (backend-aligned)
    - Players:  GET /api/tournaments/:tid/players  -> array
    - Teams:    GET /api/tournaments/:tid/teams    -> { tournamentId, teams: [...] }
-              (your curl shows this shape)
    - Create:   POST /api/tournaments/:tid/teams   expects { playerAId, playerBId, teamName }
 ------------------------------ */
 
@@ -179,7 +178,7 @@ export default function PlayersPage() {
         .map((t) => ({
           id: String(t.id ?? t.teamId ?? ""),
           name: t.name ?? t.teamName ?? "",
-          players: Array.isArray(t.players) ? t.players : [], // might be empty if backend doesn't include players
+          players: Array.isArray(t.players) ? t.players : [],
         }))
         .filter((t) => t.id);
 
@@ -314,6 +313,7 @@ export default function PlayersPage() {
   }
 
   async function deletePlayer(id) {
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm("Delete this player?")) return;
 
     try {
@@ -441,6 +441,7 @@ export default function PlayersPage() {
       alert("No tournament selected.");
       return;
     }
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm("Delete this doubles team?")) return;
 
     setDeletingTeamId(teamId);
@@ -508,285 +509,119 @@ export default function PlayersPage() {
   ------------------------------ */
 
   return (
-    <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
-      <Container maxW="6xl">
-        <Stack gap={6}>
-          {/* Header */}
-          <Flex
-            align={{ base: "stretch", md: "center" }}
-            justify="space-between"
-            direction={{ base: "column", md: "row" }}
-            gap={4}
-          >
-            <Stack gap={2}>
-              <HStack gap={3} wrap="wrap">
-                <Box
-                  w="36px"
-                  h="36px"
-                  borderRadius="12px"
-                  bg="club.100"
-                  display="grid"
-                  placeItems="center"
-                >
-                  <UserRound size={18} />
-                </Box>
-
-                <Heading size="lg">Players</Heading>
-
-                <Badge variant="pickle">{players.length} total</Badge>
-
-                {status === "loading" && <Badge variant="club">Loading…</Badge>}
-                {status === "error" && (
-                  <Badge variant="club">Backend issue</Badge>
-                )}
-                {!tid ? (
-                  <Badge variant="club">No tournament selected</Badge>
-                ) : null}
-              </HStack>
-
-              <Text opacity={0.85}>
-                Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
-                below.
-              </Text>
-            </Stack>
-
-            {/* Right-side actions: Search + New Player + Back */}
-            <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
-              <Box position="relative" w={{ base: "100%", md: "320px" }}>
-                <Box
-                  position="absolute"
-                  left="12px"
-                  top="50%"
-                  transform="translateY(-50%)"
-                  opacity={0.7}
-                >
-                  <Search size={16} />
-                </Box>
-                <Input
-                  pl="38px"
-                  placeholder="Search name or DUPR…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
+    <Box bg="cream.50" minH="calc(100vh - 64px)">
+      {/* Full-width sticky cream banner (outside Container so it spans full page) */}
+      <Box
+        w="100%"
+        bg="rgba(245, 239, 227, 1)"
+        borderBottom="1px solid"
+        borderColor="blackAlpha.200"
+        position="sticky"
+        top={0}
+        zIndex={10}
+      >
+        <Container maxW="6xl" py={4} px={{ base: 4, md: 6 }}>
+          <Flex align="center" justify="space-between" gap={4}>
+            <HStack gap={3} wrap="wrap">
+              <Box
+                w="36px"
+                h="36px"
+                borderRadius="12px"
+                bg="club.100"
+                display="grid"
+                placeItems="center"
+              >
+                <UserRound size={18} />
               </Box>
 
-              <Button
-                variant="pickle"
-                onClick={() => setOpenPlayer(true)}
-                disabled={!tid}
-              >
-                <HStack gap={2}>
-                  <Plus size={16} />
-                  <Text>New Player</Text>
-                </HStack>
-              </Button>
+              <Heading size="md">Players</Heading>
 
-              <Button variant="outline" onClick={() => navigate("/")}>
-                <HStack gap={2}>
-                  <ArrowLeft size={16} />
-                  <Text>Back</Text>
-                </HStack>
-              </Button>
-            </HStack>
-          </Flex>
+              <Badge variant="pickle">{players.length} total</Badge>
 
-          {/* Players Table */}
-          <Box
-            bg="white"
-            border="1px solid"
-            borderColor="border"
-            borderRadius="2xl"
-            boxShadow="soft"
-            overflow="hidden"
-          >
-            <Box p={{ base: 4, md: 5 }}>
-              {filteredPlayers.length === 0 ? (
-                <Box
-                  border="1px dashed"
-                  borderColor="border"
-                  borderRadius="2xl"
-                  p={{ base: 6, md: 10 }}
-                  textAlign="center"
-                  bg="cream.50"
-                >
-                  <Heading size="md" mb={2}>
-                    No players found
-                  </Heading>
-                  <Text opacity={0.8} mb={5}>
-                    {tid
-                      ? "Try a different search, or add your first player."
-                      : "Select a tournament first on the Home page."}
-                  </Text>
-                  <Button
-                    variant="pickle"
-                    onClick={() => setOpenPlayer(true)}
-                    disabled={!tid}
-                  >
-                    Add Player
-                  </Button>
-                </Box>
-              ) : (
-                <Box overflowX="auto">
-                  <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Name</Table.ColumnHeader>
-                        <Table.ColumnHeader>DUPR</Table.ColumnHeader>
-                        <Table.ColumnHeader>Tier</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
-
-                    <Table.Body>
-                      {filteredPlayers.map((p) => {
-                        const duprVal =
-                          p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
-                        const tier = p.duprTier ?? duprTierFromNumber(duprVal);
-
-                        return (
-                          <Table.Row
-                            key={p.id ?? p.email ?? p.name}
-                            bg={p._optimistic ? "green.50" : undefined}
-                          >
-                            <Table.Cell fontWeight="600">
-                              {p.name ?? "Unnamed"}
-                              {p._optimistic ? (
-                                <Badge ml={2} variant="pickle">
-                                  Just joined
-                                </Badge>
-                              ) : null}
-                            </Table.Cell>
-
-                            <Table.Cell>
-                              <Badge variant="club">
-                                {formatDupr(duprVal)}
-                              </Badge>
-                            </Table.Cell>
-
-                            <Table.Cell>
-                              <Badge variant="club">{tier}</Badge>
-                            </Table.Cell>
-
-                            <Table.Cell textAlign="end">
-                              {!p._optimistic ? (
-                                <IconButton
-                                  aria-label="Delete player"
-                                  variant="outline"
-                                  onClick={() => deletePlayer(p.id)}
-                                >
-                                  <Trash2 size={16} />
-                                </IconButton>
-                              ) : null}
-                            </Table.Cell>
-                          </Table.Row>
-                        );
-                      })}
-                    </Table.Body>
-                  </Table.Root>
-                </Box>
+              {status === "loading" && <Badge variant="club">Loading…</Badge>}
+              {status === "error" && (
+                <Badge variant="club">Backend issue</Badge>
               )}
-            </Box>
-          </Box>
-
-          {/* Doubles Teams Section */}
-          <Card.Root>
-            <Card.Body>
-              <Flex
-                align={{ base: "stretch", md: "center" }}
-                justify="space-between"
-                direction={{ base: "column", md: "row" }}
-                gap={3}
-              >
-                <HStack gap={3} wrap="wrap">
-                  <Box
-                    w="36px"
-                    h="36px"
-                    borderRadius="12px"
-                    bg="club.100"
-                    display="grid"
-                    placeItems="center"
-                    border="1px solid"
-                    borderColor="border"
-                  >
-                    <Users size={18} />
-                  </Box>
-
-                  <Heading size="md">Doubles Teams</Heading>
-
-                  {teamsStatus === "loading" ? (
-                    <Badge variant="club">Loading…</Badge>
-                  ) : (
-                    <Badge variant="pickle">{teams.length} teams</Badge>
-                  )}
-
-                  {teamsError ? <Badge variant="club">Issue</Badge> : null}
-                </HStack>
-
-                <HStack
-                  gap={2}
-                  justify={{ base: "flex-start", md: "flex-end" }}
-                >
-                  <Button
-                    variant="outline"
-                    onClick={loadTeams}
-                    disabled={!tid || teamsStatus === "loading"}
-                  >
-                    Refresh
-                  </Button>
-
-                  <Button
-                    variant="pickle"
-                    onClick={() => setOpenTeam(true)}
-                    disabled={!tid}
-                  >
-                    <HStack gap={2}>
-                      <Plus size={16} />
-                      <Text>Create Team</Text>
-                    </HStack>
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={generateMatches}
-                    disabled={!tid || generateStatus === "saving"}
-                  >
-                    <HStack gap={2}>
-                      <CalendarDays size={16} />
-                      <Text>
-                        {generateStatus === "saving"
-                          ? "Generating…"
-                          : "Generate Matches"}
-                      </Text>
-                    </HStack>
-                  </Button>
-                </HStack>
-              </Flex>
-
-              {generateError ? (
-                <Box
-                  mt={3}
-                  border="1px solid"
-                  borderColor="red.200"
-                  bg="red.50"
-                  p={3}
-                  borderRadius="lg"
-                >
-                  <Text color="red.700" fontSize="sm">
-                    {generateError}
-                  </Text>
-                </Box>
+              {!tid ? (
+                <Badge variant="club">No tournament selected</Badge>
               ) : null}
+            </HStack>
 
-              {teamsError ? (
-                <Text mt={3} fontSize="sm" color="red.600">
-                  {teamsError}
+            <Button variant="ghost" onClick={() => navigate("/")}>
+              Home
+            </Button>
+          </Flex>
+        </Container>
+      </Box>
+
+      <Box py={{ base: 8, md: 12 }}>
+        <Container maxW="6xl">
+          <Stack gap={6}>
+            {/* Subtitle + Actions */}
+            <Flex
+              align={{ base: "stretch", md: "center" }}
+              justify="space-between"
+              direction={{ base: "column", md: "row" }}
+              gap={4}
+            >
+              <Stack gap={2}>
+                <Text opacity={0.85}>
+                  Search by <b>name</b> or <b>DUPR</b>. Then create doubles
+                  teams below.
                 </Text>
-              ) : null}
+              </Stack>
 
-              <Box mt={4} overflowX="auto">
-                {teams.length === 0 ? (
+              {/* Right-side actions: Search + New Player + Back */}
+              <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
+                <Box position="relative" w={{ base: "100%", md: "320px" }}>
+                  <Box
+                    position="absolute"
+                    left="12px"
+                    top="50%"
+                    transform="translateY(-50%)"
+                    opacity={0.7}
+                  >
+                    <Search size={16} />
+                  </Box>
+                  <Input
+                    pl="38px"
+                    placeholder="Search name or DUPR…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </Box>
+
+                <Button
+                  variant="pickle"
+                  onClick={() => setOpenPlayer(true)}
+                  disabled={!tid}
+                >
+                  <HStack gap={2}>
+                    <Plus size={16} />
+                    <Text>New Player</Text>
+                  </HStack>
+                </Button>
+
+                <Button variant="outline" onClick={() => navigate("/")}>
+                  <HStack gap={2}>
+                    <ArrowLeft size={16} />
+                    <Text>Back</Text>
+                  </HStack>
+                </Button>
+              </HStack>
+            </Flex>
+
+            {/* Players Table */}
+            <Box
+              bg="white"
+              border="1px solid"
+              borderColor="border"
+              borderRadius="2xl"
+              boxShadow="soft"
+              overflow="hidden"
+            >
+              <Box p={{ base: 4, md: 5 }}>
+                {filteredPlayers.length === 0 ? (
                   <Box
                     border="1px dashed"
                     borderColor="border"
@@ -795,318 +630,510 @@ export default function PlayersPage() {
                     textAlign="center"
                     bg="cream.50"
                   >
-                    <Heading size="sm" mb={2}>
-                      No teams yet
+                    <Heading size="md" mb={2}>
+                      No players found
                     </Heading>
-                    <Text opacity={0.8} mb={4}>
-                      Create doubles teams (2 players per team) to generate
-                      matches.
+                    <Text opacity={0.8} mb={5}>
+                      {tid
+                        ? "Try a different search, or add your first player."
+                        : "Select a tournament first on the Home page."}
                     </Text>
+                    <Button
+                      variant="pickle"
+                      onClick={() => setOpenPlayer(true)}
+                      disabled={!tid}
+                    >
+                      Add Player
+                    </Button>
+                  </Box>
+                ) : (
+                  <Box overflowX="auto">
+                    <Table.Root size="md" variant="outline">
+                      <Table.Header>
+                        <Table.Row>
+                          <Table.ColumnHeader>Name</Table.ColumnHeader>
+                          <Table.ColumnHeader>DUPR</Table.ColumnHeader>
+                          <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">
+                            Actions
+                          </Table.ColumnHeader>
+                        </Table.Row>
+                      </Table.Header>
+
+                      <Table.Body>
+                        {filteredPlayers.map((p) => {
+                          const duprVal =
+                            p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
+                          const tier =
+                            p.duprTier ?? duprTierFromNumber(duprVal);
+
+                          return (
+                            <Table.Row
+                              key={p.id ?? p.email ?? p.name}
+                              bg={p._optimistic ? "green.50" : undefined}
+                            >
+                              <Table.Cell fontWeight="600">
+                                {p.name ?? "Unnamed"}
+                                {p._optimistic ? (
+                                  <Badge ml={2} variant="pickle">
+                                    Just joined
+                                  </Badge>
+                                ) : null}
+                              </Table.Cell>
+
+                              <Table.Cell>
+                                <Badge variant="club">
+                                  {formatDupr(duprVal)}
+                                </Badge>
+                              </Table.Cell>
+
+                              <Table.Cell>
+                                <Badge variant="club">{tier}</Badge>
+                              </Table.Cell>
+
+                              <Table.Cell textAlign="end">
+                                {!p._optimistic ? (
+                                  <IconButton
+                                    aria-label="Delete player"
+                                    variant="outline"
+                                    onClick={() => deletePlayer(p.id)}
+                                  >
+                                    <Trash2 size={16} />
+                                  </IconButton>
+                                ) : null}
+                              </Table.Cell>
+                            </Table.Row>
+                          );
+                        })}
+                      </Table.Body>
+                    </Table.Root>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+
+            {/* Doubles Teams Section */}
+            <Card.Root>
+              <Card.Body>
+                <Flex
+                  align={{ base: "stretch", md: "center" }}
+                  justify="space-between"
+                  direction={{ base: "column", md: "row" }}
+                  gap={3}
+                >
+                  <HStack gap={3} wrap="wrap">
+                    <Box
+                      w="36px"
+                      h="36px"
+                      borderRadius="12px"
+                      bg="club.100"
+                      display="grid"
+                      placeItems="center"
+                      border="1px solid"
+                      borderColor="border"
+                    >
+                      <Users size={18} />
+                    </Box>
+
+                    <Heading size="md">Doubles Teams</Heading>
+
+                    {teamsStatus === "loading" ? (
+                      <Badge variant="club">Loading…</Badge>
+                    ) : (
+                      <Badge variant="pickle">{teams.length} teams</Badge>
+                    )}
+
+                    {teamsError ? <Badge variant="club">Issue</Badge> : null}
+                  </HStack>
+
+                  <HStack
+                    gap={2}
+                    justify={{ base: "flex-start", md: "flex-end" }}
+                  >
+                    <Button
+                      variant="outline"
+                      onClick={loadTeams}
+                      disabled={!tid || teamsStatus === "loading"}
+                    >
+                      Refresh
+                    </Button>
+
                     <Button
                       variant="pickle"
                       onClick={() => setOpenTeam(true)}
                       disabled={!tid}
                     >
-                      Create Team
+                      <HStack gap={2}>
+                        <Plus size={16} />
+                        <Text>Create Team</Text>
+                      </HStack>
                     </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={generateMatches}
+                      disabled={!tid || generateStatus === "saving"}
+                    >
+                      <HStack gap={2}>
+                        <CalendarDays size={16} />
+                        <Text>
+                          {generateStatus === "saving"
+                            ? "Generating…"
+                            : "Generate Matches"}
+                        </Text>
+                      </HStack>
+                    </Button>
+                  </HStack>
+                </Flex>
+
+                {generateError ? (
+                  <Box
+                    mt={3}
+                    border="1px solid"
+                    borderColor="red.200"
+                    bg="red.50"
+                    p={3}
+                    borderRadius="lg"
+                  >
+                    <Text color="red.700" fontSize="sm">
+                      {generateError}
+                    </Text>
                   </Box>
-                ) : (
-                  <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Team</Table.ColumnHeader>
-                        <Table.ColumnHeader>Players</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
+                ) : null}
 
-                    <Table.Body>
-                      {teams.map((t) => (
-                        <Table.Row key={t.id}>
-                          <Table.Cell fontWeight="700">{t.name}</Table.Cell>
+                {teamsError ? (
+                  <Text mt={3} fontSize="sm" color="red.600">
+                    {teamsError}
+                  </Text>
+                ) : null}
 
-                          <Table.Cell>
-                            <Text fontWeight="600">
-                              {(t.players ?? [])
-                                .map((p) => p.name)
-                                .filter(Boolean)
-                                .join(" / ") || "—"}
-                            </Text>
-                          </Table.Cell>
-
-                          <Table.Cell textAlign="end">
-                            <HStack justify="flex-end" gap={2}>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openRenameModal(t)}
-                                disabled={!tid}
-                              >
-                                Rename
-                              </Button>
-
-                              <IconButton
-                                aria-label="Delete team"
-                                variant="outline"
-                                onClick={() => deleteTeam(t.id)}
-                                disabled={!tid || deletingTeamId === t.id}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </HStack>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Root>
-                )}
-              </Box>
-            </Card.Body>
-          </Card.Root>
-
-          {/* Create Player Modal */}
-          <Dialog.Root
-            open={openPlayer}
-            onOpenChange={(e) => setOpenPlayer(e.open)}
-          >
-            <Portal>
-              <Dialog.Backdrop />
-              <Dialog.Positioner>
-                <Dialog.Content>
-                  <Dialog.Header>
-                    <Dialog.Title>Add Player</Dialog.Title>
-                  </Dialog.Header>
-
-                  <Dialog.Body>
-                    <Stack gap={3}>
-                      <Input
-                        placeholder="Player name"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                      />
-                      <Input
-                        placeholder="DUPR (optional)"
-                        value={newDupr}
-                        onChange={(e) => setNewDupr(e.target.value)}
-                        inputMode="decimal"
-                      />
-                    </Stack>
-                  </Dialog.Body>
-
-                  <Dialog.Footer>
-                    <HStack gap={2}>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpenPlayer(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button variant="pickle" onClick={createPlayer}>
-                        Create
-                      </Button>
-                    </HStack>
-                  </Dialog.Footer>
-                </Dialog.Content>
-              </Dialog.Positioner>
-            </Portal>
-          </Dialog.Root>
-
-          {/* Create Team Modal */}
-          <Dialog.Root
-            open={openTeam}
-            onOpenChange={(e) => setOpenTeam(e.open)}
-          >
-            <Portal>
-              <Dialog.Backdrop />
-              <Dialog.Positioner>
-                <Dialog.Content>
-                  <Dialog.Header>
-                    <Dialog.Title>Create Doubles Team</Dialog.Title>
-                  </Dialog.Header>
-
-                  <Dialog.Body>
-                    <Stack gap={4}>
-                      {createTeamError ? (
-                        <Box
-                          border="1px solid"
-                          borderColor="red.200"
-                          bg="red.50"
-                          borderRadius="lg"
-                          p={3}
-                        >
-                          <Text color="red.700" fontSize="sm">
-                            {createTeamError}
-                          </Text>
-                        </Box>
-                      ) : null}
-
-                      <Stack gap={2}>
-                        <Text fontSize="sm" fontWeight="700">
-                          Team name (optional)
-                        </Text>
-                        <Input
-                          placeholder="ex: Dill Dealers"
-                          value={teamName}
-                          onChange={(e) => setTeamName(e.target.value)}
-                          disabled={!tid || createTeamStatus === "saving"}
-                        />
-                        <Text fontSize="xs" opacity={0.7}>
-                          Leave blank to auto-name.
-                        </Text>
-                      </Stack>
-
-                      <Stack gap={2}>
-                        <Text fontSize="sm" fontWeight="700">
-                          Player 1 (only unassigned players)
-                        </Text>
-                        <Select.Root
-                          collection={playerOptionsA}
-                          value={teamAId ? [teamAId] : []}
-                          onValueChange={(d) => setTeamAId(d.value?.[0] ?? "")}
-                          disabled={!tid || createTeamStatus === "saving"}
-                        >
-                          <Select.Trigger>
-                            <Select.ValueText placeholder="Select player 1" />
-                          </Select.Trigger>
-                          <Select.Content>
-                            {playerOptionsA.items.map((opt) => (
-                              <Select.Item key={opt.value} item={opt}>
-                                {opt.label}
-                              </Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select.Root>
-                      </Stack>
-
-                      <Stack gap={2}>
-                        <Text fontSize="sm" fontWeight="700">
-                          Player 2 (only unassigned players)
-                        </Text>
-                        <Select.Root
-                          collection={playerOptionsB}
-                          value={teamBId ? [teamBId] : []}
-                          onValueChange={(d) => setTeamBId(d.value?.[0] ?? "")}
-                          disabled={!tid || createTeamStatus === "saving"}
-                        >
-                          <Select.Trigger>
-                            <Select.ValueText placeholder="Select player 2" />
-                          </Select.Trigger>
-                          <Select.Content>
-                            {playerOptionsB.items.map((opt) => (
-                              <Select.Item key={opt.value} item={opt}>
-                                {opt.label}
-                              </Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select.Root>
-
-                        {teamAId && teamBId && teamAId === teamBId ? (
-                          <Text fontSize="sm" color="red.600">
-                            Pick two different players.
-                          </Text>
-                        ) : null}
-
-                        {playerOptionsBase.items.length === 0 ? (
-                          <Text fontSize="sm" opacity={0.7}>
-                            All players are already assigned to teams.
-                          </Text>
-                        ) : null}
-                      </Stack>
-                    </Stack>
-                  </Dialog.Body>
-
-                  <Dialog.Footer>
-                    <HStack gap={2}>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpenTeam(false)}
-                        disabled={createTeamStatus === "saving"}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="pickle"
-                        onClick={createTeam}
-                        disabled={!canCreateTeam}
-                      >
-                        {createTeamStatus === "saving"
-                          ? "Creating…"
-                          : "Create Team"}
-                      </Button>
-                    </HStack>
-                  </Dialog.Footer>
-                </Dialog.Content>
-              </Dialog.Positioner>
-            </Portal>
-          </Dialog.Root>
-
-          {/* Rename Team Modal */}
-          <Dialog.Root
-            open={openRename}
-            onOpenChange={(e) => setOpenRename(e.open)}
-          >
-            <Portal>
-              <Dialog.Backdrop />
-              <Dialog.Positioner>
-                <Dialog.Content>
-                  <Dialog.Header>
-                    <Dialog.Title>Rename Team</Dialog.Title>
-                  </Dialog.Header>
-
-                  <Dialog.Body>
-                    <Stack gap={3}>
-                      {renameError ? (
-                        <Box
-                          border="1px solid"
-                          borderColor="red.200"
-                          bg="red.50"
-                          borderRadius="lg"
-                          p={3}
-                        >
-                          <Text color="red.700" fontSize="sm">
-                            {renameError}
-                          </Text>
-                        </Box>
-                      ) : null}
-
-                      <Input
-                        placeholder="New team name"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        disabled={renameStatus === "saving"}
-                      />
-                      <Text fontSize="sm" opacity={0.75}>
-                        Renaming is safe even after matches are generated.
+                <Box mt={4} overflowX="auto">
+                  {teams.length === 0 ? (
+                    <Box
+                      border="1px dashed"
+                      borderColor="border"
+                      borderRadius="2xl"
+                      p={{ base: 6, md: 10 }}
+                      textAlign="center"
+                      bg="cream.50"
+                    >
+                      <Heading size="sm" mb={2}>
+                        No teams yet
+                      </Heading>
+                      <Text opacity={0.8} mb={4}>
+                        Create doubles teams (2 players per team) to generate
+                        matches.
                       </Text>
-                    </Stack>
-                  </Dialog.Body>
-
-                  <Dialog.Footer>
-                    <HStack gap={2}>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpenRename(false)}
-                        disabled={renameStatus === "saving"}
-                      >
-                        Cancel
-                      </Button>
                       <Button
                         variant="pickle"
-                        onClick={saveRename}
-                        disabled={!tid || renameStatus === "saving"}
+                        onClick={() => setOpenTeam(true)}
+                        disabled={!tid}
                       >
-                        {renameStatus === "saving" ? "Saving…" : "Save"}
+                        Create Team
                       </Button>
-                    </HStack>
-                  </Dialog.Footer>
-                </Dialog.Content>
-              </Dialog.Positioner>
-            </Portal>
-          </Dialog.Root>
-        </Stack>
-      </Container>
+                    </Box>
+                  ) : (
+                    <Table.Root size="md" variant="outline">
+                      <Table.Header>
+                        <Table.Row>
+                          <Table.ColumnHeader>Team</Table.ColumnHeader>
+                          <Table.ColumnHeader>Players</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">
+                            Actions
+                          </Table.ColumnHeader>
+                        </Table.Row>
+                      </Table.Header>
+
+                      <Table.Body>
+                        {teams.map((t) => (
+                          <Table.Row key={t.id}>
+                            <Table.Cell fontWeight="700">{t.name}</Table.Cell>
+
+                            <Table.Cell>
+                              <Text fontWeight="600">
+                                {(t.players ?? [])
+                                  .map((p) => p.name)
+                                  .filter(Boolean)
+                                  .join(" / ") || "—"}
+                              </Text>
+                            </Table.Cell>
+
+                            <Table.Cell textAlign="end">
+                              <HStack justify="flex-end" gap={2}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openRenameModal(t)}
+                                  disabled={!tid}
+                                >
+                                  Rename
+                                </Button>
+
+                                <IconButton
+                                  aria-label="Delete team"
+                                  variant="outline"
+                                  onClick={() => deleteTeam(t.id)}
+                                  disabled={!tid || deletingTeamId === t.id}
+                                >
+                                  <Trash2 size={16} />
+                                </IconButton>
+                              </HStack>
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table.Root>
+                  )}
+                </Box>
+              </Card.Body>
+            </Card.Root>
+
+            {/* Create Player Modal */}
+            <Dialog.Root
+              open={openPlayer}
+              onOpenChange={(e) => setOpenPlayer(e.open)}
+            >
+              <Portal>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                  <Dialog.Content>
+                    <Dialog.Header>
+                      <Dialog.Title>Add Player</Dialog.Title>
+                    </Dialog.Header>
+
+                    <Dialog.Body>
+                      <Stack gap={3}>
+                        <Input
+                          placeholder="Player name"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                        />
+                        <Input
+                          placeholder="DUPR (optional)"
+                          value={newDupr}
+                          onChange={(e) => setNewDupr(e.target.value)}
+                          inputMode="decimal"
+                        />
+                      </Stack>
+                    </Dialog.Body>
+
+                    <Dialog.Footer>
+                      <HStack gap={2}>
+                        <Button
+                          variant="outline"
+                          onClick={() => setOpenPlayer(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button variant="pickle" onClick={createPlayer}>
+                          Create
+                        </Button>
+                      </HStack>
+                    </Dialog.Footer>
+                  </Dialog.Content>
+                </Dialog.Positioner>
+              </Portal>
+            </Dialog.Root>
+
+            {/* Create Team Modal */}
+            <Dialog.Root
+              open={openTeam}
+              onOpenChange={(e) => setOpenTeam(e.open)}
+            >
+              <Portal>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                  <Dialog.Content>
+                    <Dialog.Header>
+                      <Dialog.Title>Create Doubles Team</Dialog.Title>
+                    </Dialog.Header>
+
+                    <Dialog.Body>
+                      <Stack gap={4}>
+                        {createTeamError ? (
+                          <Box
+                            border="1px solid"
+                            borderColor="red.200"
+                            bg="red.50"
+                            borderRadius="lg"
+                            p={3}
+                          >
+                            <Text color="red.700" fontSize="sm">
+                              {createTeamError}
+                            </Text>
+                          </Box>
+                        ) : null}
+
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Team name (optional)
+                          </Text>
+                          <Input
+                            placeholder="ex: Dill Dealers"
+                            value={teamName}
+                            onChange={(e) => setTeamName(e.target.value)}
+                            disabled={!tid || createTeamStatus === "saving"}
+                          />
+                          <Text fontSize="xs" opacity={0.7}>
+                            Leave blank to auto-name.
+                          </Text>
+                        </Stack>
+
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Player 1 (only unassigned players)
+                          </Text>
+                          <Select.Root
+                            collection={playerOptionsA}
+                            value={teamAId ? [teamAId] : []}
+                            onValueChange={(d) =>
+                              setTeamAId(d.value?.[0] ?? "")
+                            }
+                            disabled={!tid || createTeamStatus === "saving"}
+                          >
+                            <Select.Trigger>
+                              <Select.ValueText placeholder="Select player 1" />
+                            </Select.Trigger>
+                            <Select.Content>
+                              {playerOptionsA.items.map((opt) => (
+                                <Select.Item key={opt.value} item={opt}>
+                                  {opt.label}
+                                </Select.Item>
+                              ))}
+                            </Select.Content>
+                          </Select.Root>
+                        </Stack>
+
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Player 2 (only unassigned players)
+                          </Text>
+                          <Select.Root
+                            collection={playerOptionsB}
+                            value={teamBId ? [teamBId] : []}
+                            onValueChange={(d) =>
+                              setTeamBId(d.value?.[0] ?? "")
+                            }
+                            disabled={!tid || createTeamStatus === "saving"}
+                          >
+                            <Select.Trigger>
+                              <Select.ValueText placeholder="Select player 2" />
+                            </Select.Trigger>
+                            <Select.Content>
+                              {playerOptionsB.items.map((opt) => (
+                                <Select.Item key={opt.value} item={opt}>
+                                  {opt.label}
+                                </Select.Item>
+                              ))}
+                            </Select.Content>
+                          </Select.Root>
+
+                          {teamAId && teamBId && teamAId === teamBId ? (
+                            <Text fontSize="sm" color="red.600">
+                              Pick two different players.
+                            </Text>
+                          ) : null}
+
+                          {playerOptionsBase.items.length === 0 ? (
+                            <Text fontSize="sm" opacity={0.7}>
+                              All players are already assigned to teams.
+                            </Text>
+                          ) : null}
+                        </Stack>
+                      </Stack>
+                    </Dialog.Body>
+
+                    <Dialog.Footer>
+                      <HStack gap={2}>
+                        <Button
+                          variant="outline"
+                          onClick={() => setOpenTeam(false)}
+                          disabled={createTeamStatus === "saving"}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="pickle"
+                          onClick={createTeam}
+                          disabled={!canCreateTeam}
+                        >
+                          {createTeamStatus === "saving"
+                            ? "Creating…"
+                            : "Create Team"}
+                        </Button>
+                      </HStack>
+                    </Dialog.Footer>
+                  </Dialog.Content>
+                </Dialog.Positioner>
+              </Portal>
+            </Dialog.Root>
+
+            {/* Rename Team Modal */}
+            <Dialog.Root
+              open={openRename}
+              onOpenChange={(e) => setOpenRename(e.open)}
+            >
+              <Portal>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                  <Dialog.Content>
+                    <Dialog.Header>
+                      <Dialog.Title>Rename Team</Dialog.Title>
+                    </Dialog.Header>
+
+                    <Dialog.Body>
+                      <Stack gap={3}>
+                        {renameError ? (
+                          <Box
+                            border="1px solid"
+                            borderColor="red.200"
+                            bg="red.50"
+                            borderRadius="lg"
+                            p={3}
+                          >
+                            <Text color="red.700" fontSize="sm">
+                              {renameError}
+                            </Text>
+                          </Box>
+                        ) : null}
+
+                        <Input
+                          placeholder="New team name"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          disabled={renameStatus === "saving"}
+                        />
+                        <Text fontSize="sm" opacity={0.75}>
+                          Renaming is safe even after matches are generated.
+                        </Text>
+                      </Stack>
+                    </Dialog.Body>
+
+                    <Dialog.Footer>
+                      <HStack gap={2}>
+                        <Button
+                          variant="outline"
+                          onClick={() => setOpenRename(false)}
+                          disabled={renameStatus === "saving"}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="pickle"
+                          onClick={saveRename}
+                          disabled={!tid || renameStatus === "saving"}
+                        >
+                          {renameStatus === "saving" ? "Saving…" : "Save"}
+                        </Button>
+                      </HStack>
+                    </Dialog.Footer>
+                  </Dialog.Content>
+                </Dialog.Positioner>
+              </Portal>
+            </Dialog.Root>
+          </Stack>
+        </Container>
+      </Box>
     </Box>
   );
 }

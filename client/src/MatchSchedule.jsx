@@ -6,11 +6,13 @@ import {
   Button,
   Card,
   Container,
+  Dialog,
   Flex,
   Heading,
   HStack,
   IconButton,
   Input,
+  Portal,
   Stack,
   Text,
   Select,
@@ -18,6 +20,7 @@ import {
   createListCollection,
 } from "@chakra-ui/react";
 import {
+  Flag,
   Home,
   Save,
   Search,
@@ -536,6 +539,7 @@ export default function MatchSchedule() {
       return;
     }
 
+    // If finals already exist, just jump the filter
     if (finalsExist) {
       setPhaseFilter("FINAL");
       setQuery("");
@@ -620,11 +624,52 @@ export default function MatchSchedule() {
     return base;
   }
 
+  /* ------------------ SCRATCH / FORFEIT (Round Robin) ------------------ */
+
+  const [scratchOpen, setScratchOpen] = useState(false);
+  const [scratchMatch, setScratchMatch] = useState(null); // match object
+  const [scratchStatus, setScratchStatus] = useState("idle"); // idle | saving | error
+  const [scratchError, setScratchError] = useState("");
+
+  function openScratch(m) {
+    setScratchError("");
+    setScratchStatus("idle");
+    setScratchMatch(m);
+    setScratchOpen(true);
+  }
+
+  async function submitScratch(winnerId) {
+    if (!scratchMatch?.id) return;
+
+    setScratchError("");
+    setScratchStatus("saving");
+
+    try {
+      const res = await fetch(
+        withTid(`/api/roundrobin/matches/${scratchMatch.id}/score`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ winnerId }),
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not scratch match.");
+
+      setScratchOpen(false);
+      setScratchMatch(null);
+      setScratchStatus("idle");
+
+      await loadState();
+    } catch (e) {
+      console.error(e);
+      setScratchStatus("error");
+      setScratchError(e.message || "Could not scratch match.");
+    }
+  }
+
   // ✅ Nuclear option: force an opaque paint layer + kill any transparency
-  // - backgroundColor uses CSS variable with fallback
-  // - zIndex very high
-  // - transform creates its own compositor layer (Safari fix)
-  // - boxShadow + border helps visually separate
   const stickyStyle = {
     backgroundColor: "var(--chakra-colors-cream-50, #FFF7E6)",
     opacity: 1,
@@ -635,6 +680,9 @@ export default function MatchSchedule() {
     WebkitBackdropFilter: "none",
     backdropFilter: "none",
   };
+
+  // ✅ Disable “Advance to Finals” until it makes sense (unless finals already exist)
+  const canAdvanceToFinals = finalsExist || (semisExist && semisComplete);
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
@@ -650,7 +698,6 @@ export default function MatchSchedule() {
         overflow="hidden"
         style={stickyStyle}
       >
-        {/* Also paint the inner container, in case the bleed is inside */}
         <Container maxW="6xl" py={{ base: 4, md: 5 }} style={stickyStyle}>
           <Stack gap={3}>
             <Flex
@@ -741,7 +788,12 @@ export default function MatchSchedule() {
                 <Button
                   variant="outline"
                   onClick={advanceToFinals}
-                  disabled={!tid || advancingFinals || tournamentComplete}
+                  disabled={
+                    !tid ||
+                    advancingFinals ||
+                    tournamentComplete ||
+                    !canAdvanceToFinals
+                  }
                 >
                   <HStack gap={2}>
                     <ChevronsRight size={16} />
@@ -809,7 +861,6 @@ export default function MatchSchedule() {
         </Container>
       </Box>
 
-      {/* Give content enough clearance so it doesn't sit under the header */}
       <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
         <Stack gap={6}>
           {advanceSemisError ? (
@@ -1037,7 +1088,7 @@ export default function MatchSchedule() {
                       <Table.ColumnHeader>Score B</Table.ColumnHeader>
                       <Table.ColumnHeader>Winner</Table.ColumnHeader>
                       <Table.ColumnHeader textAlign="end">
-                        Save
+                        Actions
                       </Table.ColumnHeader>
                     </Table.Row>
                   </Table.Header>
@@ -1057,6 +1108,13 @@ export default function MatchSchedule() {
                       };
 
                       const locked = tournamentComplete;
+
+                      const canScratch =
+                        tid &&
+                        !locked &&
+                        m.phase === "RR" &&
+                        !m.winnerId &&
+                        scratchStatus !== "saving";
 
                       return (
                         <Table.Row key={`${m.phase}-${m.id}`}>
@@ -1109,16 +1167,31 @@ export default function MatchSchedule() {
                           </Table.Cell>
 
                           <Table.Cell textAlign="end">
-                            <Button
-                              variant="pickle"
-                              onClick={() => saveMatch(m)}
-                              disabled={!tid || !!row.saving || locked}
-                            >
-                              <HStack gap={2}>
-                                <Save size={16} />
-                                <Text>{locked ? "Locked" : "Save"}</Text>
-                              </HStack>
-                            </Button>
+                            <HStack justify="flex-end" gap={2}>
+                              {/* Scratch / Forfeit for RR matches */}
+                              {m.phase === "RR" ? (
+                                <IconButton
+                                  aria-label="Scratch / Forfeit"
+                                  variant="outline"
+                                  onClick={() => openScratch(m)}
+                                  disabled={!canScratch}
+                                  title="Scratch / Forfeit (pick winner without entering scores)"
+                                >
+                                  <Flag size={16} />
+                                </IconButton>
+                              ) : null}
+
+                              <Button
+                                variant="pickle"
+                                onClick={() => saveMatch(m)}
+                                disabled={!tid || !!row.saving || locked}
+                              >
+                                <HStack gap={2}>
+                                  <Save size={16} />
+                                  <Text>{locked ? "Locked" : "Save"}</Text>
+                                </HStack>
+                              </Button>
+                            </HStack>
                           </Table.Cell>
                         </Table.Row>
                       );
@@ -1129,7 +1202,7 @@ export default function MatchSchedule() {
             </Card.Body>
           </Card.Root>
 
-          {/* Finals quick summary (improves finals section labeling/visibility) */}
+          {/* Finals quick summary */}
           {tid && status === "ok" && finalsExist ? (
             <Card.Root>
               <Card.Body>
@@ -1191,6 +1264,98 @@ export default function MatchSchedule() {
           ) : null}
         </Stack>
       </Container>
+
+      {/* ------------------ Scratch / Forfeit Modal ------------------ */}
+      <Dialog.Root
+        open={scratchOpen}
+        onOpenChange={(e) => setScratchOpen(e.open)}
+      >
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Scratch / Forfeit</Dialog.Title>
+              </Dialog.Header>
+
+              <Dialog.Body>
+                {scratchError ? (
+                  <Box
+                    border="1px solid"
+                    borderColor="red.200"
+                    bg="red.50"
+                    borderRadius="lg"
+                    p={3}
+                    mb={3}
+                  >
+                    <Text color="red.700" fontSize="sm">
+                      {scratchError}
+                    </Text>
+                  </Box>
+                ) : null}
+
+                <Text fontSize="sm" opacity={0.85} mb={3}>
+                  Pick a winner without entering a score. This marks the match
+                  complete and updates standings.
+                </Text>
+
+                <Box
+                  border="1px solid"
+                  borderColor="border"
+                  borderRadius="xl"
+                  p={3}
+                  bg="cream.50"
+                >
+                  <Text fontWeight="800">
+                    {scratchMatch
+                      ? `${teamDisplay(scratchMatch.teamAId)} vs ${teamDisplay(
+                          scratchMatch.teamBId
+                        )}`
+                      : "—"}
+                  </Text>
+                  <Text fontSize="sm" opacity={0.75}>
+                    Match: {scratchMatch?.id ?? "—"}
+                  </Text>
+                </Box>
+              </Dialog.Body>
+
+              <Dialog.Footer>
+                <HStack gap={2} justify="space-between" w="full" wrap="wrap">
+                  <Button
+                    variant="outline"
+                    onClick={() => setScratchOpen(false)}
+                    disabled={scratchStatus === "saving"}
+                  >
+                    Cancel
+                  </Button>
+
+                  <HStack gap={2} wrap="wrap" justify="flex-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => submitScratch(scratchMatch?.teamAId)}
+                      disabled={
+                        scratchStatus === "saving" || !scratchMatch?.teamAId
+                      }
+                    >
+                      Winner: Team A
+                    </Button>
+
+                    <Button
+                      variant="pickle"
+                      onClick={() => submitScratch(scratchMatch?.teamBId)}
+                      disabled={
+                        scratchStatus === "saving" || !scratchMatch?.teamBId
+                      }
+                    >
+                      Winner: Team B
+                    </Button>
+                  </HStack>
+                </HStack>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
     </Box>
   );
 }

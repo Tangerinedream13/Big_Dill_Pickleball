@@ -1,18 +1,31 @@
 // backend/server.js
 
-console.log("TOP OF SERVER.JS");
-
 require("dotenv").config();
-console.log("✅ after dotenv");
+
+// --- Boot logging (set BOOT_DEBUG=1 to enable verbose startup logs) ---
+const BOOT_DEBUG = process.env.BOOT_DEBUG === "1";
+const bootLog = (...args) => BOOT_DEBUG && console.log(...args);
+
+bootLog("TOP OF SERVER.JS");
+bootLog("✅ after dotenv");
+
+// ------------------ PROCESS ERROR LOGGING (install early) ------------------
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED PROMISE REJECTION:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+});
 
 const express = require("express");
-console.log("✅ after express");
+bootLog("✅ after express");
 
 const pool = require("./db");
-console.log("✅ after db");
+bootLog("✅ after db");
 
 const engine = require("./tournamentEngine");
-console.log("✅ after engine");
+bootLog("✅ after engine");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -61,31 +74,19 @@ function validatePickleballScore(
   const max = Math.max(scoreA, scoreB);
   const min = Math.min(scoreA, scoreB);
 
-  // Require reaching at least playTo
   if (max < playTo) return `Game must be played to at least ${playTo}.`;
-
-  // Win-by rule once at/over playTo
   if (max - min < winBy) return `Team must win by ${winBy}.`;
 
-  return null; // valid
+  return null;
 }
 
 app.use(express.json());
 
-console.log("✅ server.js loaded, routes about to be registered");
+bootLog("✅ server.js loaded, routes about to be registered");
 
 app.use("/api/teams", teamsRoutes);
 app.use("/api/tournaments", tournamentsRoutes);
 app.use("/api", signupRoutes(pool));
-
-// ------------------ PROCESS ERROR LOGGING ------------------
-process.on("unhandledRejection", (reason) => {
-  console.error("UNHANDLED PROMISE REJECTION:", reason);
-});
-
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION:", err);
-});
 
 // ------------------ HEALTH ------------------
 app.get("/health", (req, res) => {
@@ -434,7 +435,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
     const teams = await getTeamsForTournament(tournamentId);
 
-    // ✅ Guard: need at least 3 teams to run RR at all
+    // Guard: need at least 3 teams to run RR at all
     if (teams.length < 3) {
       return res.status(409).json({
         error: "You need at least 3 teams to generate a round robin schedule.",
@@ -574,17 +575,12 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 // ------------------ ROUND ROBIN SCORING ------------------
 app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
   const { code } = req.params; // e.g. "RR-1"
-  const { scoreA, scoreB } = req.body;
+  const { scoreA, scoreB, winnerId: winnerIdRaw } = req.body;
 
   try {
     const tournamentId = await resolveTournamentId(req);
 
-    const msg = validatePickleballScore(scoreA, scoreB, {
-      playTo: 11,
-      winBy: 2,
-    });
-    if (msg) return res.status(400).json({ error: msg });
-
+    // Load the RR match (needed for both normal scoring + scratch)
     const mRes = await pool.query(
       `
       select team_a_id as "teamAId", team_b_id as "teamBId"
@@ -601,18 +597,58 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
     }
 
     const m = mRes.rows[0];
-    const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
 
-    await pool.query(
-      `
-      update matches
-      set score_a = $1, score_b = $2, winner_id = $3
-      where tournament_id = $4
-        and code = $5
-        and phase = 'RR'
-      `,
-      [scoreA, scoreB, winnerId, tournamentId, code]
-    );
+    // ---------------- Scratch / forfeit path ----------------
+    // If client provides winnerId, treat match as scratched and just store winner_id.
+    if (
+      winnerIdRaw !== undefined &&
+      winnerIdRaw !== null &&
+      winnerIdRaw !== ""
+    ) {
+      const w = Number(winnerIdRaw);
+      if (!Number.isInteger(w)) {
+        return res.status(400).json({ error: "winnerId must be an integer." });
+      }
+
+      const a = Number(m.teamAId);
+      const b = Number(m.teamBId);
+      if (w !== a && w !== b) {
+        return res
+          .status(400)
+          .json({ error: "winnerId must be Team A or Team B for this match." });
+      }
+
+      await pool.query(
+        `
+        update matches
+        set score_a = null, score_b = null, winner_id = $1
+        where tournament_id = $2
+          and code = $3
+          and phase = 'RR'
+        `,
+        [w, tournamentId, code]
+      );
+    } else {
+      // ---------------- Normal scoring path ----------------
+      const msg = validatePickleballScore(scoreA, scoreB, {
+        playTo: 11,
+        winBy: 2,
+      });
+      if (msg) return res.status(400).json({ error: msg });
+
+      const winnerId = scoreA > scoreB ? m.teamAId : m.teamBId;
+
+      await pool.query(
+        `
+        update matches
+        set score_a = $1, score_b = $2, winner_id = $3
+        where tournament_id = $4
+          and code = $5
+          and phase = 'RR'
+        `,
+        [scoreA, scoreB, winnerId, tournamentId, code]
+      );
+    }
 
     // Return updated tournament state so UI refreshes cleanly
     const teams = await getTeamsForTournament(tournamentId);
@@ -1167,7 +1203,11 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ------------------ START SERVER (Railway-safe) ------------------
-console.log("🚀 starting express server");
+bootLog("🚀 starting express server");
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server listening on port ${PORT}`);
+  if (process.env.BOOT_DEBUG === "1") {
+    console.log("🛠 BOOT_DEBUG enabled (verbose startup logs)");
+  }
 });

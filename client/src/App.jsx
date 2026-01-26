@@ -189,7 +189,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
 
-      // ✅ OPTIMISTIC PLAYER WRITE (shared store)
+      // OPTIMISTIC PLAYER WRITE (shared store)
       setOptimisticPlayer({
         id: "optimistic",
         tournamentId: selectedTid,
@@ -236,17 +236,6 @@ export default function App() {
                       <Text fontWeight="800" color="club.900">
                         Current Tournament
                       </Text>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={loadTournaments}
-                        disabled={tournamentsStatus === "loading"}
-                      >
-                        {tournamentsStatus === "loading"
-                          ? "Refreshing…"
-                          : "Refresh"}
-                      </Button>
                     </HStack>
 
                     {tournamentsStatus === "error" ? (
@@ -392,8 +381,6 @@ export default function App() {
               desc="Manage player rosters."
               cta="View Players"
               onClick={() => navigate("/players")}
-              // Players can still be viewed, but if you want to force tournament selection:
-              // disabled={!hasTournamentSelected}
             />
             <ActionTile
               icon={<CalendarDays size={18} />}

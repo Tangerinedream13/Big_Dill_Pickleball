@@ -28,6 +28,7 @@ import {
   ArrowLeft,
   Users,
   CalendarDays,
+  Home,
 } from "lucide-react";
 
 import { consumeOptimisticPlayer } from "./optimisticPlayerStore";
@@ -54,14 +55,6 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
-/* -----------------------------
-   Players Page (backend-aligned)
-   - Players:  GET /api/tournaments/:tid/players  -> array
-   - Teams:    GET /api/tournaments/:tid/teams    -> { tournamentId, teams: [...] }
-              (your curl shows this shape)
-   - Create:   POST /api/tournaments/:tid/teams   expects { playerAId, playerBId, teamName }
------------------------------- */
-
 export default function PlayersPage() {
   const navigate = useNavigate();
   const tid = getCurrentTournamentId();
@@ -84,7 +77,7 @@ export default function PlayersPage() {
   // Teams section
   const [teamsStatus, setTeamsStatus] = useState("idle"); // idle | loading | ok | error
   const [teamsError, setTeamsError] = useState("");
-  const [teams, setTeams] = useState([]); // normalized to array of {id, name, players?}
+  const [teams, setTeams] = useState([]);
 
   // Create team modal
   const [openTeam, setOpenTeam] = useState(false);
@@ -109,8 +102,16 @@ export default function PlayersPage() {
   const [generateError, setGenerateError] = useState("");
 
   /* -----------------------------
-     Load players + optimistic merge (tournament-safe)
+     Sticky style (match MatchSchedule)
   ------------------------------ */
+  const stickyStyle = useMemo(
+    () => ({
+      backgroundColor: "rgba(245, 239, 227, 1)", // force opaque cream
+      backdropFilter: "none",
+      WebkitBackdropFilter: "none",
+    }),
+    []
+  );
 
   async function loadPlayers() {
     try {
@@ -121,13 +122,11 @@ export default function PlayersPage() {
       }
 
       setStatus("loading");
-
       const res = await fetch(`/api/tournaments/${tid}/players`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const serverPlayers = await res.json(); // array
+      const serverPlayers = await res.json();
 
-      // Only apply optimistic player if it belongs to this tournament
       const optimistic = consumeOptimisticPlayer();
       const optimisticMatchesTid =
         optimistic && String(optimistic.tournamentId ?? "") === String(tid);
@@ -167,19 +166,17 @@ export default function PlayersPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
-      // Your curl shows: { tournamentId: "9", teams: [{id, name}] }
       const rawTeams = Array.isArray(data?.teams)
         ? data.teams
         : Array.isArray(data)
         ? data
         : [];
 
-      // Normalize so UI always uses {id, name, players?}
       const normalized = rawTeams
         .map((t) => ({
           id: String(t.id ?? t.teamId ?? ""),
           name: t.name ?? t.teamName ?? "",
-          players: Array.isArray(t.players) ? t.players : [], // might be empty if backend doesn't include players
+          players: Array.isArray(t.players) ? t.players : [],
         }))
         .filter((t) => t.id);
 
@@ -198,10 +195,6 @@ export default function PlayersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tid]);
 
-  /* -----------------------------
-     Search (name or DUPR only)
-  ------------------------------ */
-
   const filteredPlayers = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return players;
@@ -213,11 +206,6 @@ export default function PlayersPage() {
     });
   }, [players, query]);
 
-  /* -----------------------------
-     Build set of players already assigned to a team
-     (works if teams endpoint includes players; otherwise will be empty)
-  ------------------------------ */
-
   const assignedPlayerIds = useMemo(() => {
     const s = new Set();
     for (const t of teams ?? []) {
@@ -227,11 +215,6 @@ export default function PlayersPage() {
     }
     return s;
   }, [teams]);
-
-  /* -----------------------------
-     Collections for team modal dropdowns
-     Only show players not already assigned to a doubles team
-  ------------------------------ */
 
   const playerOptionsBase = useMemo(() => {
     const items = [...players]
@@ -257,7 +240,6 @@ export default function PlayersPage() {
     return createListCollection({ items });
   }, [playerOptionsBase, teamAId]);
 
-  // If player 1 changes to match player 2, clear player 2
   useEffect(() => {
     if (teamAId && teamBId && teamAId === teamBId) setTeamBId("");
   }, [teamAId, teamBId]);
@@ -268,11 +250,6 @@ export default function PlayersPage() {
     teamBId &&
     teamAId !== teamBId &&
     createTeamStatus !== "saving";
-
-  /* -----------------------------
-     Create / Delete players
-     (still uses /api/players with ?tournamentId=)
-  ------------------------------ */
 
   async function createPlayer() {
     const name = newName.trim();
@@ -314,6 +291,7 @@ export default function PlayersPage() {
   }
 
   async function deletePlayer(id) {
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm("Delete this player?")) return;
 
     try {
@@ -329,11 +307,6 @@ export default function PlayersPage() {
       alert(e.message || "Could not delete player.");
     }
   }
-
-  /* -----------------------------
-     Create Team
-     POST /api/tournaments/:tid/teams expects { playerAId, playerBId, teamName }
-  ------------------------------ */
 
   async function createTeam() {
     setCreateTeamError("");
@@ -378,11 +351,6 @@ export default function PlayersPage() {
       setCreateTeamError(e.message || "Could not create team.");
     }
   }
-
-  /* -----------------------------
-     Rename Team
-     Uses existing teamsRoutes: PATCH /api/teams/:id { name, tournamentId }
-  ------------------------------ */
 
   function openRenameModal(team) {
     setRenameError("");
@@ -431,16 +399,12 @@ export default function PlayersPage() {
     }
   }
 
-  /* -----------------------------
-     Delete Team
-     Uses existing teamsRoutes: DELETE /api/teams/:id
-  ------------------------------ */
-
   async function deleteTeam(teamId) {
     if (!tid) {
       alert("No tournament selected.");
       return;
     }
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm("Delete this doubles team?")) return;
 
     setDeletingTeamId(teamId);
@@ -461,11 +425,6 @@ export default function PlayersPage() {
       setDeletingTeamId(null);
     }
   }
-
-  /* -----------------------------
-     Generate Matches (Round Robin)
-     Still uses /api/roundrobin/generate with ?tournamentId=
-  ------------------------------ */
 
   async function generateMatches() {
     setGenerateError("");
@@ -503,22 +462,39 @@ export default function PlayersPage() {
     }
   }
 
-  /* -----------------------------
-     UI
-  ------------------------------ */
-
   return (
-    <Box bg="cream.50" minH="calc(100vh - 64px)" py={{ base: 8, md: 12 }}>
-      <Container maxW="6xl">
-        <Stack gap={6}>
-          {/* Header */}
+    <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
+      {/* Sticky header wrapper (FORCED opaque) — matches MatchSchedule */}
+      <Box
+        position="sticky"
+        top="0"
+        zIndex={9999}
+        borderBottom="1px solid"
+        borderColor="border"
+        boxShadow="md"
+        isolation="isolate"
+        overflow="hidden"
+        style={stickyStyle}
+      >
+        <Container maxW="6xl" px={{ base: 4, md: 6 }}>
           <Flex
-            align={{ base: "stretch", md: "center" }}
+            align="center"
             justify="space-between"
-            direction={{ base: "column", md: "row" }}
+            py={{ base: 5, md: 6 }}
             gap={4}
           >
-            <Stack gap={2}>
+            {/* Left side: Home icon + title */}
+            <HStack gap={4} wrap="wrap">
+              <IconButton
+                aria-label="Home"
+                variant="outline"
+                onClick={() => navigate("/")}
+                borderRadius="xl"
+                bg="white"
+              >
+                <Home size={18} />
+              </IconButton>
+
               <HStack gap={3} wrap="wrap">
                 <Box
                   w="36px"
@@ -531,7 +507,7 @@ export default function PlayersPage() {
                   <UserRound size={18} />
                 </Box>
 
-                <Heading size="lg">Players</Heading>
+                <Heading size="md">Players</Heading>
 
                 <Badge variant="pickle">{players.length} total</Badge>
 
@@ -543,14 +519,30 @@ export default function PlayersPage() {
                   <Badge variant="club">No tournament selected</Badge>
                 ) : null}
               </HStack>
+            </HStack>
 
+            {/* Right side: (optional) keep empty for now to match MatchSchedule spacing */}
+            <Box />
+          </Flex>
+        </Container>
+      </Box>
+
+      <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
+        <Stack gap={6}>
+          {/* Subtitle + Actions */}
+          <Flex
+            align={{ base: "stretch", md: "center" }}
+            justify="space-between"
+            direction={{ base: "column", md: "row" }}
+            gap={4}
+          >
+            <Stack gap={2}>
               <Text opacity={0.85}>
                 Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
                 below.
               </Text>
             </Stack>
 
-            {/* Right-side actions: Search + New Player + Back */}
             <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
               <Box position="relative" w={{ base: "100%", md: "320px" }}>
                 <Box

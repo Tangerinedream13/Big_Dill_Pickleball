@@ -1,9 +1,11 @@
 /**
  * Big Dill Pickleball Round Robin + Playoffs Engine
  *
- * Assumptions:
- * - No ties (scoreA !== scoreB). If ties are possible, handle that separately.
- * - Teams are doubles pairs; represented by { id, name } at minimum.
+ * Notes:
+ * - No ties (scoreA !== scoreB).
+ * - Supports RR forfeits/scratches where winnerId is set but scoreA/scoreB are null.
+ * - Normalizes IDs to strings inside computeStandings to avoid Map key mismatches
+ *   when DB returns ids like "41" (strings) but engine inputs are numbers (or vice versa).
  */
 
 function shuffle(array, rng = Math.random) {
@@ -16,7 +18,10 @@ function shuffle(array, rng = Math.random) {
 }
 
 function pairKey(aId, bId) {
-  return aId < bId ? `${aId}-${bId}` : `${bId}-${aId}`;
+  // normalize to strings so ordering/comparisons are stable
+  const a = String(aId);
+  const b = String(bId);
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
 }
 
 /**
@@ -36,18 +41,16 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
   if (gamesPerTeam < 1) throw new Error("gamesPerTeam must be >= 1");
   if (gamesPerTeam > teams.length - 1) {
     throw new Error(
-      `gamesPerTeam=${gamesPerTeam} is too large for ${
-        teams.length
-      } teams (max is ${teams.length - 1}).`
+      `gamesPerTeam=${gamesPerTeam} is too large for ${teams.length} teams (max is ${
+        teams.length - 1
+      }).`
     );
   }
 
   const teamIds = teams.map((t) => t.id);
 
-  // Full Round Robin: use "circle method" (most traditional + perfectly balanced)
-  // Each team plays every other team exactly once.
+  // Full Round Robin: use "circle method" (balanced; each team plays each other exactly once)
   if (gamesPerTeam === teams.length - 1) {
-    // For odd number of teams, add a BYE
     const ids = [...teamIds];
     const hasBye = ids.length % 2 === 1;
     if (hasBye) ids.push("BYE");
@@ -56,7 +59,6 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
     const rounds = n - 1;
     const half = n / 2;
 
-    // "Fixed" first position, rotate the rest
     const fixed = ids[0];
     let rotating = ids.slice(1);
 
@@ -70,7 +72,6 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
         const aId = left[i];
         const bId = right[i];
 
-        // skip BYE matches (odd team count)
         if (aId === "BYE" || bId === "BYE") continue;
 
         schedule.push({
@@ -84,7 +85,6 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
         });
       }
 
-      // rotate: move last of rotating to front
       rotating = [
         rotating[rotating.length - 1],
         ...rotating.slice(0, rotating.length - 1),
@@ -94,8 +94,7 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
     return schedule;
   }
 
-  // Partial Round Robin: keep your greedy + shuffle approach
-  // (good for league-night style, e.g. "4 games per team")
+  // Partial Round Robin: greedy + shuffle
   const allPairs = [];
   for (let i = 0; i < teamIds.length; i++) {
     for (let j = i + 1; j < teamIds.length; j++) {
@@ -135,15 +134,13 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
       if (done) break;
     }
 
-    const complete = teamIds.every(
-      (id) => gamesPlayed.get(id) === gamesPerTeam
-    );
+    const complete = teamIds.every((id) => gamesPlayed.get(id) === gamesPerTeam);
     if (complete) return schedule;
   }
 
   throw new Error(
     `Could not generate a schedule where each team plays ${gamesPerTeam} games after many attempts.
-  Try reducing gamesPerTeam or increasing team count.`
+Try reducing gamesPerTeam or increasing team count.`
   );
 }
 
@@ -156,8 +153,7 @@ function scoreMatch(matches, matchId, scoreA, scoreB) {
   if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
     throw new Error("Scores must be integers.");
   }
-  if (scoreA === scoreB)
-    throw new Error("Ties not supported for bracket logic.");
+  if (scoreA === scoreB) throw new Error("Ties not supported for bracket logic.");
 
   match.scoreA = scoreA;
   match.scoreB = scoreB;
@@ -168,27 +164,63 @@ function scoreMatch(matches, matchId, scoreA, scoreB) {
 
 /**
  * Compute standings from RR matches.
- * Returns array of { teamId, wins, pointDiff } sorted by wins desc, pointDiff desc.
+ * Returns array of { teamId, wins, pointDiff, gamesPlayed } sorted by wins desc, pointDiff desc.
+ *
+ * Forfeits/scratches:
+ * - If winnerId is set and scoreA/scoreB are BOTH null => count as a win for winner, 1 game played for both,
+ *   and do NOT change pointDiff.
  */
 function computeStandings(teamIds, rrMatches) {
+  // normalize ids to strings so Map keys match DB-returned ids like "41"
+  const ids = teamIds.map((id) => String(id));
+
   const stats = new Map(
-    teamIds.map((id) => [id, { teamId: id, wins: 0, pointDiff: 0 }])
+    ids.map((id) => [
+      id,
+      { teamId: id, wins: 0, pointDiff: 0, gamesPlayed: 0 },
+    ])
   );
 
   for (const m of rrMatches) {
     if (m.phase !== "RR") continue;
-    if (m.scoreA == null || m.scoreB == null) continue;
+    if (!m.winnerId) continue; // unplayed
 
-    const a = stats.get(m.teamAId);
-    const b = stats.get(m.teamBId);
+    const teamAId = String(m.teamAId);
+    const teamBId = String(m.teamBId);
+    const winnerId = String(m.winnerId);
 
-    // wins
-    if (m.scoreA > m.scoreB) a.wins += 1;
+    const a = stats.get(teamAId);
+    const b = stats.get(teamBId);
+    if (!a || !b) continue;
+
+    // FORFEIT / SCRATCH
+    if (m.scoreA == null && m.scoreB == null) {
+      const winner = stats.get(winnerId);
+      if (!winner) continue;
+
+      winner.wins += 1;
+      winner.gamesPlayed += 1;
+
+      const loserId = winnerId === teamAId ? teamBId : teamAId;
+      const loser = stats.get(loserId);
+      if (loser) loser.gamesPlayed += 1;
+
+      continue;
+    }
+
+    // NORMAL SCORING
+    const scoreA = Number(m.scoreA);
+    const scoreB = Number(m.scoreB);
+    if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) continue;
+
+    a.gamesPlayed += 1;
+    b.gamesPlayed += 1;
+
+    if (scoreA > scoreB) a.wins += 1;
     else b.wins += 1;
 
-    // point differential
-    a.pointDiff += m.scoreA - m.scoreB;
-    b.pointDiff += m.scoreB - m.scoreA;
+    a.pointDiff += scoreA - scoreB;
+    b.pointDiff += scoreB - scoreA;
   }
 
   return Array.from(stats.values()).sort((x, y) => {
@@ -202,8 +234,7 @@ function computeStandings(teamIds, rrMatches) {
  * Requires at least 4 teams.
  */
 function generatePlayoffsFromStandings(standings) {
-  if (standings.length < 4)
-    throw new Error("Need at least 4 teams for playoffs.");
+  if (standings.length < 4) throw new Error("Need at least 4 teams for playoffs.");
 
   const seed1 = standings[0].teamId;
   const seed2 = standings[1].teamId;
@@ -241,9 +272,7 @@ function generateFinalsFromSemis(semis) {
   if (!sf1 || !sf2) throw new Error("Need SF1 and SF2.");
 
   if (!sf1.winnerId || !sf2.winnerId) {
-    throw new Error(
-      "Both semifinals must be completed before generating finals."
-    );
+    throw new Error("Both semifinals must be completed before generating finals.");
   }
 
   const sf1Loser = sf1.winnerId === sf1.teamAId ? sf1.teamBId : sf1.teamAId;

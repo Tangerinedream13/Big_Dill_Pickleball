@@ -915,9 +915,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       from matches
       where tournament_id = $1
         and code = $2
-        and phase = $2
+        and phase = $3
       `,
-      [tournamentId, id]
+      [tournamentId, id, id]
     );
 
     if (mRes.rowCount === 0) {
@@ -933,9 +933,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       set score_a = $1, score_b = $2, winner_id = $3
       where tournament_id = $4
         and code = $5
-        and phase = $5
+        and phase = $6
       `,
-      [scoreA, scoreB, winnerId, tournamentId, id]
+      [scoreA, scoreB, winnerId, tournamentId, id, id]
     );
 
     const teams = await getTeamsForTournament(tournamentId);

@@ -106,9 +106,14 @@ export default function PlayersPage() {
   ------------------------------ */
   const stickyStyle = useMemo(
     () => ({
-      backgroundColor: "rgba(245, 239, 227, 1)", // force opaque cream
-      backdropFilter: "none",
+      backgroundColor: "var(--chakra-colors-cream-50, #FFF7E6)",
+      opacity: 1,
+      transform: "translateZ(0)",
+      WebkitTransform: "translateZ(0)",
+      WebkitBackfaceVisibility: "hidden",
+      backfaceVisibility: "hidden",
       WebkitBackdropFilter: "none",
+      backdropFilter: "none",
     }),
     []
   );
@@ -464,7 +469,7 @@ export default function PlayersPage() {
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* Sticky header wrapper (FORCED opaque) — matches MatchSchedule */}
+      {/* Sticky header wrapper (FORCED opaque) — match MatchSchedule height/feel */}
       <Box
         position="sticky"
         top="0"
@@ -476,26 +481,25 @@ export default function PlayersPage() {
         overflow="hidden"
         style={stickyStyle}
       >
-        <Container maxW="6xl" px={{ base: 4, md: 6 }}>
-          <Flex
-            align="center"
-            justify="space-between"
-            py={{ base: 5, md: 6 }}
-            gap={4}
-          >
-            {/* Left side: Home icon + title */}
-            <HStack gap={4} wrap="wrap">
-              <IconButton
-                aria-label="Home"
-                variant="outline"
-                onClick={() => navigate("/")}
-                borderRadius="xl"
-                bg="white"
-              >
-                <Home size={18} />
-              </IconButton>
-
+        <Container maxW="6xl" py={{ base: 4, md: 5 }} style={stickyStyle}>
+          <Stack gap={3}>
+            <Flex
+              align={{ base: "stretch", md: "center" }}
+              justify="space-between"
+              direction={{ base: "column", md: "row" }}
+              gap={3}
+            >
               <HStack gap={3} wrap="wrap">
+                <IconButton
+                  aria-label="Home"
+                  variant="outline"
+                  onClick={() => navigate("/")}
+                  borderRadius="xl"
+                  bg="white"
+                >
+                  <Home size={18} />
+                </IconButton>
+
                 <Box
                   w="36px"
                   h="36px"
@@ -507,7 +511,9 @@ export default function PlayersPage() {
                   <UserRound size={18} />
                 </Box>
 
-                <Heading size="md">Players</Heading>
+                <Heading size="lg" letterSpacing="-0.02em">
+                  Players
+                </Heading>
 
                 <Badge variant="pickle">{players.length} total</Badge>
 
@@ -519,49 +525,52 @@ export default function PlayersPage() {
                   <Badge variant="club">No tournament selected</Badge>
                 ) : null}
               </HStack>
-            </HStack>
 
-            {/* Right side: (optional) keep empty for now to match MatchSchedule spacing */}
-            <Box />
-          </Flex>
+              {/* keep empty to mirror MatchSchedule layout spacing */}
+              <Box />
+            </Flex>
+
+            {/* Second line (adds the extra banner height / cohesion) */}
+            <Text opacity={0.85}>
+              Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
+              below.
+            </Text>
+          </Stack>
         </Container>
       </Box>
 
       <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
         <Stack gap={6}>
-          {/* Subtitle + Actions */}
+          {/* Actions row (search + buttons) */}
           <Flex
             align={{ base: "stretch", md: "center" }}
             justify="space-between"
             direction={{ base: "column", md: "row" }}
             gap={4}
           >
-            <Stack gap={2}>
-              <Text opacity={0.85}>
-                Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
-                below.
-              </Text>
-            </Stack>
-
-            <HStack gap={2} justify={{ base: "flex-start", md: "flex-end" }}>
-              <Box position="relative" w={{ base: "100%", md: "320px" }}>
-                <Box
-                  position="absolute"
-                  left="12px"
-                  top="50%"
-                  transform="translateY(-50%)"
-                  opacity={0.7}
-                >
-                  <Search size={16} />
-                </Box>
-                <Input
-                  pl="38px"
-                  placeholder="Search name or DUPR…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
+            <Box position="relative" w={{ base: "100%", md: "360px" }}>
+              <Box
+                position="absolute"
+                left="12px"
+                top="50%"
+                transform="translateY(-50%)"
+                opacity={0.7}
+              >
+                <Search size={16} />
               </Box>
+              <Input
+                pl="38px"
+                placeholder="Search name or DUPR…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </Box>
 
+            <HStack
+              gap={2}
+              justify={{ base: "flex-start", md: "flex-end" }}
+              wrap="wrap"
+            >
               <Button
                 variant="pickle"
                 onClick={() => setOpenPlayer(true)}
@@ -719,6 +728,7 @@ export default function PlayersPage() {
                 <HStack
                   gap={2}
                   justify={{ base: "flex-start", md: "flex-end" }}
+                  wrap="wrap"
                 >
                   <Button
                     variant="outline"
@@ -829,7 +839,7 @@ export default function PlayersPage() {
                           </Table.Cell>
 
                           <Table.Cell textAlign="end">
-                            <HStack justify="flex-end" gap={2}>
+                            <HStack justify="flex-end" gap={2} wrap="wrap">
                               <Button
                                 size="sm"
                                 variant="outline"

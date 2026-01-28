@@ -111,7 +111,7 @@ function validateScore(phase, a, b) {
   return null;
 }
 
-// ✅ Forfeit/scratch detection:
+// Forfeit/scratch detection:
 // winnerId exists but scores are null/undefined/"" -> this was scratched/forfeited
 function isForfeitRR(match) {
   if (match?.phase !== "RR") return false;
@@ -559,7 +559,7 @@ export default function MatchSchedule() {
       return;
     }
 
-    // ✅ Finals require semis
+    // Finals require semis
     if (!semisExist) {
       setAdvanceFinalsError(
         "Finals come after Semifinals. Advance to Semis first."
@@ -649,10 +649,12 @@ export default function MatchSchedule() {
   const [scratchMatch, setScratchMatch] = useState(null);
   const [scratchStatus, setScratchStatus] = useState("idle"); // idle | saving | error
   const [scratchError, setScratchError] = useState("");
+  const [confirmScratchFor, setConfirmScratchFor] = useState(null);
 
   function openScratch(m) {
     setScratchError("");
     setScratchStatus("idle");
+    setConfirmScratchFor(null);
     setScratchMatch(m);
     setScratchOpen(true);
   }
@@ -688,7 +690,7 @@ export default function MatchSchedule() {
     }
   }
 
-  // ✅ Forced opaque sticky header style (your existing fix)
+  // Forced opaque sticky header style (your existing fix)
   const stickyStyle = {
     backgroundColor: "var(--chakra-colors-cream-50, #FFF7E6)",
     opacity: 1,
@@ -1122,7 +1124,7 @@ export default function MatchSchedule() {
 
                       const forfeited = isForfeitRR(m);
 
-                      // ✅ Lock completed matches (scored OR forfeited) + tournament complete
+                      // Lock completed matches (scored OR forfeited) + tournament complete
                       const locked = tournamentComplete || !!m.winnerId;
 
                       return (
@@ -1188,7 +1190,18 @@ export default function MatchSchedule() {
 
                           <Table.Cell textAlign="end">
                             <HStack justify="flex-end" gap={2} wrap="wrap">
-                              {/* ✅ Scratch only for RR matches that are NOT complete */}
+                              <Button
+                                variant="pickle"
+                                onClick={() => saveMatch(m)}
+                                disabled={!tid || !!row.saving || locked}
+                              >
+                                <HStack gap={2}>
+                                  <Save size={16} />
+                                  <Text>{locked ? "Locked" : "Save"}</Text>
+                                </HStack>
+                              </Button>
+
+                              {/* Scratch only for RR matches that are NOT complete */}
                               {m.phase === "RR" &&
                               !tournamentComplete &&
                               !m.winnerId ? (
@@ -1203,17 +1216,6 @@ export default function MatchSchedule() {
                                   </HStack>
                                 </Button>
                               ) : null}
-
-                              <Button
-                                variant="pickle"
-                                onClick={() => saveMatch(m)}
-                                disabled={!tid || !!row.saving || locked}
-                              >
-                                <HStack gap={2}>
-                                  <Save size={16} />
-                                  <Text>{locked ? "Locked" : "Save"}</Text>
-                                </HStack>
-                              </Button>
                             </HStack>
                           </Table.Cell>
                         </Table.Row>
@@ -1294,9 +1296,10 @@ export default function MatchSchedule() {
         onOpenChange={(e) => setScratchOpen(e.open)}
       >
         <Portal>
-          <Dialog.Backdrop />
-          <Dialog.Positioner>
-            <Dialog.Content>
+          {/* ✅ Make sure modal is ABOVE sticky header (header is 9999) */}
+          <Dialog.Backdrop zIndex={20000} />
+          <Dialog.Positioner zIndex={20001}>
+            <Dialog.Content zIndex={20002}>
               <Dialog.Header>
                 <Dialog.Title>Scratch / Forfeit (Round Robin)</Dialog.Title>
               </Dialog.Header>
@@ -1339,11 +1342,30 @@ export default function MatchSchedule() {
                       </Text>
                     </Box>
                   ) : null}
+
+                  {/* ✅ 2nd confirmation UI */}
+                  {confirmScratchFor ? (
+                    <Box
+                      border="1px solid"
+                      borderColor="orange.300"
+                      bg="orange.50"
+                      p={3}
+                      borderRadius="lg"
+                    >
+                      <Text fontSize="sm" fontWeight="800">
+                        Confirm scratch/forfeit
+                      </Text>
+                      <Text fontSize="sm" opacity={0.85}>
+                        This will permanently mark this match as a forfeit (no
+                        score). Continue?
+                      </Text>
+                    </Box>
+                  ) : null}
                 </Stack>
               </Dialog.Body>
 
               <Dialog.Footer>
-                <HStack gap={2} justify="flex-end" wrap="wrap">
+                <HStack gap={2} justify="flex-end" wrap="wrap" w="100%">
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -1351,35 +1373,64 @@ export default function MatchSchedule() {
                       setScratchMatch(null);
                       setScratchError("");
                       setScratchStatus("idle");
+                      setConfirmScratchFor(null); // ✅ reset
                     }}
                     disabled={scratchStatus === "saving"}
                   >
                     Cancel
                   </Button>
 
-                  <Button
-                    variant="outline"
-                    onClick={() => submitScratch(Number(scratchMatch?.teamAId))}
-                    disabled={
-                      scratchStatus === "saving" ||
-                      !scratchMatch ||
-                      !scratchMatch.teamAId
-                    }
-                  >
-                    Winner: Team A — {teamDisplay(scratchMatch?.teamAId)}
-                  </Button>
+                  {confirmScratchFor ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => setConfirmScratchFor(null)}
+                        disabled={scratchStatus === "saving"}
+                      >
+                        Go back
+                      </Button>
 
-                  <Button
-                    variant="pickle"
-                    onClick={() => submitScratch(Number(scratchMatch?.teamBId))}
-                    disabled={
-                      scratchStatus === "saving" ||
-                      !scratchMatch ||
-                      !scratchMatch.teamBId
-                    }
-                  >
-                    Winner: Team B — {teamDisplay(scratchMatch?.teamBId)}
-                  </Button>
+                      <Button
+                        variant="pickle"
+                        onClick={() =>
+                          submitScratch(
+                            confirmScratchFor === "A"
+                              ? Number(scratchMatch?.teamAId)
+                              : Number(scratchMatch?.teamBId)
+                          )
+                        }
+                        disabled={scratchStatus === "saving"}
+                      >
+                        Yes, confirm forfeit
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => setConfirmScratchFor("A")}
+                        disabled={
+                          scratchStatus === "saving" ||
+                          !scratchMatch ||
+                          !scratchMatch.teamAId
+                        }
+                      >
+                        Winner: Team A — {teamDisplay(scratchMatch?.teamAId)}
+                      </Button>
+
+                      <Button
+                        variant="pickle"
+                        onClick={() => setConfirmScratchFor("B")}
+                        disabled={
+                          scratchStatus === "saving" ||
+                          !scratchMatch ||
+                          !scratchMatch.teamBId
+                        }
+                      >
+                        Winner: Team B — {teamDisplay(scratchMatch?.teamBId)}
+                      </Button>
+                    </>
+                  )}
                 </HStack>
               </Dialog.Footer>
             </Dialog.Content>

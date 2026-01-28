@@ -915,9 +915,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       from matches
       where tournament_id = $1
         and code = $2
-        and phase = $2
+        and phase = $3
       `,
-      [tournamentId, id]
+      [tournamentId, id, id]
     );
 
     if (mRes.rowCount === 0) {
@@ -933,9 +933,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       set score_a = $1, score_b = $2, winner_id = $3
       where tournament_id = $4
         and code = $5
-        and phase = $5
+        and phase = $6
       `,
-      [scoreA, scoreB, winnerId, tournamentId, id]
+      [scoreA, scoreB, winnerId, tournamentId, id, id]
     );
 
     const teams = await getTeamsForTournament(tournamentId);
@@ -970,6 +970,34 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     res.status(500).json({ error: errToMessage(err) });
   }
 });
+
+// ------------------ HELPER: Players queries (supports schemas with OR without tournament_id) ------------------
+async function queryPlayersScoped(
+  withTournamentSql,
+  withTournamentParams,
+  withoutTournamentSql,
+  withoutTournamentParams
+) {
+  try {
+    // Try the tournament-scoped query first
+    return await pool.query(withTournamentSql, withTournamentParams);
+  } catch (err) {
+    // If the DB schema doesn't have tournament_id on players, fall back
+    const msg = (err?.message || "").toLowerCase();
+
+    // Postgres: undefined_column = 42703
+    const missingTournamentColumn =
+      err?.code === "42703" ||
+      msg.includes("tournament_id") ||
+      (msg.includes("column") && msg.includes("tournament"));
+
+    if (missingTournamentColumn) {
+      return await pool.query(withoutTournamentSql, withoutTournamentParams);
+    }
+
+    throw err;
+  }
+}
 
 // ------------------ PLAYERS (DB-BACKED, DUPR) ------------------
 // Search ONLY by name OR DUPR. No "level" / no "skill".

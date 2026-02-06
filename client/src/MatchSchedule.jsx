@@ -344,6 +344,17 @@ export default function MatchSchedule() {
     () => (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" })),
     [state]
   );
+
+  const scratchedTeamIds = useMemo(() => {
+    const s = new Set();
+    for (const m of rrMatches) {
+      if (isForfeitRR(m)) {
+        s.add(String(m.teamAId));
+        s.add(String(m.teamBId));
+      }
+    }
+    return s;
+  }, [rrMatches]);
   const semis = useMemo(
     () => (state?.semis ?? []).map((m) => ({ ...m, phase: "SF" })),
     [state]
@@ -592,7 +603,8 @@ export default function MatchSchedule() {
       if (!res.ok) throw new Error(msg?.error ?? `HTTP ${res.status}`);
 
       endEdit(matchId);
-      alert("Score saved ✅");
+      setSavedMsg(`Saved ${match.phase} ${match.id} ✅`);
+      setTimeout(() => setSavedMsg(""), 2500);
       await loadState();
     } catch (e) {
       console.error(e);
@@ -792,6 +804,7 @@ export default function MatchSchedule() {
   const [scratchStatus, setScratchStatus] = useState("idle"); // idle | saving | error
   const [scratchError, setScratchError] = useState("");
   const [confirmScratchFor, setConfirmScratchFor] = useState(null);
+  const [savedMsg, setSavedMsg] = useState("");
 
   function openScratch(m) {
     if (tournamentComplete) return;
@@ -876,7 +889,19 @@ export default function MatchSchedule() {
               >
                 <Home size={18} />
               </IconButton>
-
+              {savedMsg ? (
+                <Box
+                  border="1px solid"
+                  borderColor="green.200"
+                  bg="green.50"
+                  p={3}
+                  borderRadius="lg"
+                >
+                  <Text color="green.800" fontWeight="700" fontSize="sm">
+                    {savedMsg}
+                  </Text>
+                </Box>
+              ) : null}
               <IconButton
                 aria-label="Calendar"
                 variant="outline"
@@ -1124,7 +1149,16 @@ export default function MatchSchedule() {
                                 <Table.Row key={String(s.teamId)}>
                                   <Table.Cell>{idx + 1}</Table.Cell>
                                   <Table.Cell fontWeight="600">
-                                    {teamDisplay(s.teamId)}
+                                    <HStack gap={2}>
+                                      <Text>{teamDisplay(s.teamId)}</Text>
+                                      {scratchedTeamIds.has(
+                                        String(s.teamId)
+                                      ) ? (
+                                        <Badge variant="outline" opacity={0.6}>
+                                          Scratched
+                                        </Badge>
+                                      ) : null}
+                                    </HStack>
                                   </Table.Cell>
                                   <Table.Cell>{s.wins}</Table.Cell>
                                   <Table.Cell>{losses}</Table.Cell>
@@ -1468,6 +1502,7 @@ export default function MatchSchedule() {
                                 {showScratch ? (
                                   <IconButton
                                     aria-label="Scratch match"
+                                    title="Forfeit (clears score)"
                                     variant="ghost"
                                     size="sm"
                                     borderRadius="full"

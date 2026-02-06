@@ -33,6 +33,7 @@ import {
 
 import { consumeOptimisticPlayer } from "./optimisticPlayerStore";
 import { getCurrentTournamentId } from "./tournamentStore";
+import StickyPageHeader from "./components/StickyPageHeader";
 
 /* -----------------------------
    DUPR helpers
@@ -100,23 +101,6 @@ export default function PlayersPage() {
   // Generate matches
   const [generateStatus, setGenerateStatus] = useState("idle"); // idle | saving | ok | error
   const [generateError, setGenerateError] = useState("");
-
-  /* -----------------------------
-     Sticky style (match MatchSchedule)
-  ------------------------------ */
-  const stickyStyle = useMemo(
-    () => ({
-      backgroundColor: "var(--chakra-colors-cream-50, #FFF7E6)",
-      opacity: 1,
-      transform: "translateZ(0)",
-      WebkitTransform: "translateZ(0)",
-      WebkitBackfaceVisibility: "hidden",
-      backfaceVisibility: "hidden",
-      WebkitBackdropFilter: "none",
-      backdropFilter: "none",
-    }),
-    []
-  );
 
   async function loadPlayers() {
     try {
@@ -469,75 +453,67 @@ export default function PlayersPage() {
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* Sticky header wrapper (FORCED opaque) — match MatchSchedule height/feel */}
-      <Box
-        position="sticky"
-        top="0"
-        zIndex={9999}
-        borderBottom="1px solid"
-        borderColor="border"
-        boxShadow="md"
-        isolation="isolate"
-        overflow="hidden"
-        style={stickyStyle}
-      >
-        <Container maxW="6xl" py={{ base: 4, md: 5 }} style={stickyStyle}>
-          <Stack gap={3}>
-            <Flex
-              align={{ base: "stretch", md: "center" }}
-              justify="space-between"
-              direction={{ base: "column", md: "row" }}
-              gap={3}
-            >
-              <HStack gap={3} wrap="wrap">
-                <IconButton
-                  aria-label="Home"
-                  variant="outline"
-                  onClick={() => navigate("/")}
-                  borderRadius="xl"
-                  bg="white"
-                >
-                  <Home size={18} />
-                </IconButton>
+      {/* ✅ Sticky header via shared component (matches MatchSchedule) */}
+      <StickyPageHeader>
+        <Stack gap={3} w="100%">
+          <Flex
+            align={{ base: "stretch", md: "center" }}
+            justify="space-between"
+            direction={{ base: "column", md: "row" }}
+            gap={3}
+          >
+            <HStack gap={3} wrap="wrap">
+              <IconButton
+                aria-label="Home"
+                variant="outline"
+                onClick={() => navigate("/")}
+                borderRadius="xl"
+                bg="white"
+              >
+                <Home size={18} />
+              </IconButton>
 
-                <Box
-                  w="36px"
-                  h="36px"
-                  borderRadius="12px"
-                  bg="club.100"
-                  display="grid"
-                  placeItems="center"
-                >
-                  <UserRound size={18} />
-                </Box>
+              <Box
+                w="36px"
+                h="36px"
+                borderRadius="12px"
+                bg="club.100"
+                display="grid"
+                placeItems="center"
+                border="1px solid"
+                borderColor="border"
+              >
+                <UserRound size={18} />
+              </Box>
 
-                <Heading size="lg" letterSpacing="-0.02em">
-                  Players
-                </Heading>
+              <Heading size="lg" letterSpacing="-0.02em">
+                Players
+              </Heading>
 
-                <Badge variant="pickle">{players.length} total</Badge>
+              <Badge variant="pickle">{players.length} total</Badge>
 
-                {status === "loading" && <Badge variant="club">Loading…</Badge>}
-                {status === "error" && (
-                  <Badge variant="club">Backend issue</Badge>
-                )}
-                {!tid ? (
-                  <Badge variant="club">No tournament selected</Badge>
-                ) : null}
-              </HStack>
+              {status === "loading" ? (
+                <Badge variant="club">Loading…</Badge>
+              ) : null}
+              {status === "error" ? (
+                <Badge variant="club">Backend issue</Badge>
+              ) : null}
+              {!tid ? (
+                <Badge variant="club">No tournament selected</Badge>
+              ) : null}
+            </HStack>
 
-              {/* keep empty to mirror MatchSchedule layout spacing */}
-              <Box />
-            </Flex>
+            {/* keep empty to mirror MatchSchedule header spacing */}
+            <Box />
+          </Flex>
 
-            {/* Second line (adds the extra banner height / cohesion) */}
-            <Text opacity={0.85}>
-              Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
-              below.
-            </Text>
-          </Stack>
-        </Container>
-      </Box>
+          {/* ✅ Second line helps match banner height/feel */}
+          <Text opacity={0.85}>
+            Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
+            below.
+          </Text>
+        </Stack>
+      </StickyPageHeader>
 
       <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
         <Stack gap={6}>

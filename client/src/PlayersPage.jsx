@@ -27,6 +27,7 @@ import {
   UserRound,
   ArrowLeft,
   Users,
+  User,
   CalendarDays,
   Home,
 } from "lucide-react";
@@ -453,7 +454,7 @@ export default function PlayersPage() {
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* ✅ Sticky header via shared component (matches MatchSchedule) */}
+      {/* Sticky header via shared component (matches MatchSchedule) */}
       <StickyPageHeader>
         <Stack gap={3} w="100%">
           <Flex
@@ -462,52 +463,35 @@ export default function PlayersPage() {
             direction={{ base: "column", md: "row" }}
             gap={3}
           >
-            <HStack gap={3} wrap="wrap">
+            <HStack gap={3} wrap="wrap" align="center">
               <IconButton
                 aria-label="Home"
                 variant="outline"
+                size="md"
                 onClick={() => navigate("/")}
-                borderRadius="xl"
-                bg="white"
               >
                 <Home size={18} />
               </IconButton>
 
-              <Box
-                w="36px"
-                h="36px"
-                borderRadius="12px"
-                bg="club.100"
-                display="grid"
-                placeItems="center"
-                border="1px solid"
-                borderColor="border"
-              >
-                <UserRound size={18} />
-              </Box>
+              {/* Page icon – no box */}
+              <User size={18} />
 
               <Heading size="lg" letterSpacing="-0.02em">
                 Players
               </Heading>
 
-              <Badge variant="pickle">{players.length} total</Badge>
+              <Badge variant="pickle">{players?.length ?? 0} total</Badge>
 
-              {status === "loading" ? (
-                <Badge variant="club">Loading…</Badge>
-              ) : null}
-              {status === "error" ? (
+              {status === "loading" && <Badge variant="club">Loading…</Badge>}
+              {status === "error" && (
                 <Badge variant="club">Backend issue</Badge>
-              ) : null}
-              {!tid ? (
-                <Badge variant="club">No tournament selected</Badge>
-              ) : null}
+              )}
             </HStack>
-
             {/* keep empty to mirror MatchSchedule header spacing */}
             <Box />
           </Flex>
 
-          {/* ✅ Second line helps match banner height/feel */}
+          {/* Second line helps match banner height/feel */}
           <Text opacity={0.85}>
             Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
             below.

@@ -215,6 +215,7 @@ export default function MatchSchedule() {
 
   const [advancingFinals, setAdvancingFinals] = useState(false);
   const [advanceFinalsError, setAdvanceFinalsError] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
 
   const tid = getCurrentTournamentId();
 
@@ -804,7 +805,6 @@ export default function MatchSchedule() {
   const [scratchStatus, setScratchStatus] = useState("idle"); // idle | saving | error
   const [scratchError, setScratchError] = useState("");
   const [confirmScratchFor, setConfirmScratchFor] = useState(null);
-  const [savedMsg, setSavedMsg] = useState("");
 
   function openScratch(m) {
     if (tournamentComplete) return;

@@ -1017,7 +1017,7 @@ app.get("/api/players", async (req, res) => {
 });
 
 app.post("/api/players", async (req, res) => {
-  try {
+  // try {
     const tournamentId = await resolveTournamentId(req);
     const name = (req.body.name ?? "").toString().trim();
     const email = (req.body.email ?? "").toString().trim() || null;
@@ -1052,10 +1052,10 @@ app.post("/api/players", async (req, res) => {
 
     const p = inserted.rows[0];
     res.status(201).json({ ...p, duprTier: duprLabel(p.duprRating) });
-  } catch (err) {
-    console.error("POST /api/players error:", err);
-    res.status(500).json({ error: err.message });
-  }
+//   } catch (err) {
+//     console.error("POST /api/players error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
 });
 
 app.patch("/api/players/:id", async (req, res) => {

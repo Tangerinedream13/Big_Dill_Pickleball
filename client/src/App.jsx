@@ -1,3 +1,4 @@
+// client/src/App.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -15,7 +16,14 @@ import {
   Select,
   createListCollection,
 } from "@chakra-ui/react";
-import { Trophy, Users, CalendarDays, Plus, LogIn } from "lucide-react";
+import {
+  Trophy,
+  Users,
+  CalendarDays,
+  Plus,
+  LogIn,
+  ChevronDown,
+} from "lucide-react";
 
 import heroImg from "./assets/pickleball-hero.jpg";
 import {
@@ -92,26 +100,16 @@ export default function App() {
   }, []);
 
   /* -----------------------------
-     Join Tournament state
+     Tournament selection (global)
   ------------------------------ */
 
-  const [joinOpen, setJoinOpen] = useState(false);
   const [tournamentsStatus, setTournamentsStatus] = useState("idle");
   const [tournaments, setTournaments] = useState([]);
   const [tournamentsError, setTournamentsError] = useState("");
 
-  const [joinTournamentId, setJoinTournamentIdState] = useState(
+  const [selectedTid, setSelectedTid] = useState(
     getCurrentTournamentId() || ""
   );
-  const [joinName, setJoinName] = useState("");
-  const [joinEmail, setJoinEmail] = useState("");
-  const [joinDupr, setJoinDupr] = useState("");
-  const [joinStatus, setJoinStatus] = useState("idle");
-  const [joinError, setJoinError] = useState("");
-
-  const isSubmitting = joinStatus === "saving";
-  const currentTid = joinTournamentId || getCurrentTournamentId();
-  const hasTournamentSelected = !!currentTid;
 
   async function loadTournaments() {
     setTournamentsError("");
@@ -129,8 +127,10 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (joinOpen && tournamentsStatus === "idle") loadTournaments();
-  }, [joinOpen, tournamentsStatus]);
+    // Load tournaments once when landing on homepage
+    if (tournamentsStatus === "idle") loadTournaments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tournamentCollection = useMemo(
     () =>
@@ -143,17 +143,30 @@ export default function App() {
     [tournaments]
   );
 
-  const canJoinSubmit =
-    joinName.trim() &&
-    joinEmail.includes("@") &&
-    joinTournamentId &&
-    !isSubmitting;
-
-  function setJoinTournamentId(id) {
+  function setTidEverywhere(id) {
     const next = String(id || "");
-    setJoinTournamentIdState(next);
+    setSelectedTid(next);
     if (next) setCurrentTournamentId(next);
   }
+
+  const hasTournamentSelected = !!selectedTid;
+
+  /* -----------------------------
+     Join Tournament state
+  ------------------------------ */
+
+  const [joinOpen, setJoinOpen] = useState(false);
+
+  const [joinName, setJoinName] = useState("");
+  const [joinEmail, setJoinEmail] = useState("");
+  const [joinDupr, setJoinDupr] = useState("");
+  const [joinStatus, setJoinStatus] = useState("idle");
+  const [joinError, setJoinError] = useState("");
+
+  const isSubmitting = joinStatus === "saving";
+
+  const canJoinSubmit =
+    joinName.trim() && joinEmail.includes("@") && selectedTid && !isSubmitting;
 
   async function submitJoin(e) {
     e.preventDefault();
@@ -167,7 +180,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(`/api/tournaments/${joinTournamentId}/signup`, {
+      const res = await fetch(`/api/tournaments/${selectedTid}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -176,26 +189,33 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
 
-      // ✅ OPTIMISTIC PLAYER WRITE (shared store)
+      // OPTIMISTIC PLAYER WRITE (shared store)
       setOptimisticPlayer({
         id: "optimistic",
+        tournamentId: selectedTid,
         name: payload.name,
         email: payload.email,
         duprRating: payload.duprRating || "—",
         _optimistic: true,
       });
 
-      setCurrentTournamentId(joinTournamentId);
+      setCurrentTournamentId(selectedTid);
       navigate("/players");
     } catch (err) {
       setJoinStatus("error");
-      setJoinError(err.message || "Signup failed.");
+      setJoinError(err?.message || "Signup failed.");
+    } finally {
+      setJoinStatus("idle");
     }
   }
 
   /* -----------------------------
      UI
   ------------------------------ */
+
+  const selectedTournamentLabel =
+    tournamentCollection.items.find((i) => i.value === String(selectedTid))
+      ?.label || "";
 
   return (
     <Box minH="100vh" py={{ base: 10, md: 14 }} bg="cream.50">
@@ -204,12 +224,65 @@ export default function App() {
           <Surface p={8}>
             <Flex gap={10} direction={{ base: "column", md: "row" }}>
               <Stack flex="1" gap={4}>
-                {/* ✅ Marketing-forward title row (Option B) */}
                 <HStack gap={3} align="center" flexWrap="wrap">
                   <Heading>Big Dill Pickleball</Heading>
-
                   <Box w="1px" h="24px" bg="border" opacity={0.6} mx={2} />
                 </HStack>
+
+                {/* ✅ Current tournament selector (always visible) */}
+                <Surface p={4}>
+                  <Stack gap={2}>
+                    <HStack justify="space-between" align="center">
+                      <Text fontWeight="800" color="club.900">
+                        Current Tournament
+                      </Text>
+                    </HStack>
+
+                    {tournamentsStatus === "error" ? (
+                      <Text color="red.600" fontSize="sm">
+                        {tournamentsError}
+                      </Text>
+                    ) : null}
+
+                    <Select.Root
+                      collection={tournamentCollection}
+                      value={selectedTid ? [String(selectedTid)] : []}
+                      onValueChange={(d) => setTidEverywhere(d.value?.[0])}
+                      disabled={tournamentsStatus === "loading"}
+                    >
+                      <Select.Trigger>
+                        <Select.ValueText
+                          placeholder={
+                            tournamentsStatus === "loading"
+                              ? "Loading tournaments…"
+                              : "Select a tournament"
+                          }
+                        />
+                        <Select.Indicator>
+                          <ChevronDown size={16} />
+                        </Select.Indicator>
+                      </Select.Trigger>
+                      <Select.Content>
+                        {tournamentCollection.items.map((opt) => (
+                          <Select.Item key={opt.value} item={opt}>
+                            {opt.label}
+                          </Select.Item>
+                        ))}
+                      </Select.Content>
+                    </Select.Root>
+
+                    {hasTournamentSelected ? (
+                      <Text fontSize="sm" opacity={0.8}>
+                        Selected: <b>{selectedTournamentLabel}</b>
+                      </Text>
+                    ) : (
+                      <Text fontSize="sm" opacity={0.75}>
+                        Select a tournament to unlock Matches + Printable
+                        Brackets.
+                      </Text>
+                    )}
+                  </Stack>
+                </Surface>
 
                 <HStack>
                   <Button
@@ -230,41 +303,22 @@ export default function App() {
                   </Button>
                 </HStack>
 
+                {/* Join form */}
                 {joinOpen && (
                   <Card.Root>
                     <Card.Body>
                       <Stack as="form" onSubmit={submitJoin} gap={4}>
-                        {tournamentsStatus === "error" ? (
-                          <Text color="red.600">{tournamentsError}</Text>
-                        ) : null}
-
                         {joinError ? (
                           <Text color="red.600">{joinError}</Text>
                         ) : null}
 
-                        <Select.Root
-                          collection={tournamentCollection}
-                          value={[joinTournamentId]}
-                          onValueChange={(d) => setJoinTournamentId(d.value[0])}
-                          disabled={isSubmitting}
-                        >
-                          <Select.Trigger>
-                            <Select.ValueText
-                              placeholder={
-                                tournamentsStatus === "loading"
-                                  ? "Loading tournaments…"
-                                  : "Select tournament"
-                              }
-                            />
-                          </Select.Trigger>
-                          <Select.Content>
-                            {tournamentCollection.items.map((opt) => (
-                              <Select.Item key={opt.value} item={opt}>
-                                {opt.label}
-                              </Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select.Root>
+                        <Text fontSize="sm" opacity={0.85}>
+                          You’re joining:{" "}
+                          <b>
+                            {selectedTournamentLabel ||
+                              "Select a tournament above"}
+                          </b>
+                        </Text>
 
                         <Input
                           placeholder="Your name"
@@ -292,6 +346,7 @@ export default function App() {
                             variant="outline"
                             onClick={() => setJoinOpen(false)}
                             disabled={isSubmitting}
+                            type="button"
                           >
                             Cancel
                           </Button>
@@ -337,9 +392,9 @@ export default function App() {
             />
             <ActionTile
               icon={<Trophy size={18} />}
-              title="Bracket"
-              desc="View playoffs."
-              cta="View Bracket"
+              title="Printable Brackets"
+              desc="Print-friendly bracket sheets."
+              cta="Printable Brackets"
               onClick={() => navigate("/bracket")}
               disabled={!hasTournamentSelected}
             />

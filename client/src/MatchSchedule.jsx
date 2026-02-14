@@ -1,4 +1,5 @@
 // client/src/MatchSchedule.jsx
+import { API_BASE } from "./apiBase";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -220,9 +221,11 @@ export default function MatchSchedule() {
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
-    const u = new URL(path, window.location.origin);
+    const base = (API_BASE || window.location.origin).replace(/\/$/, "");
+    const p = String(path || "").startsWith("/") ? path : `/${path}`;
+    const u = new URL(`${base}${p}`);
     if (tid) u.searchParams.set("tournamentId", tid);
-    return u.pathname + u.search;
+    return u.toString();
   }
 
   async function loadTeamsForDisplay(tournamentId) {

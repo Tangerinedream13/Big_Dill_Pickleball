@@ -31,6 +31,7 @@ import {
   getCurrentTournamentId,
 } from "./tournamentStore";
 import { setOptimisticPlayer } from "./optimisticPlayerStore";
+import { API_BASE } from "./apiBase";
 
 /* -----------------------------
    Shared layout components
@@ -96,7 +97,7 @@ export default function App() {
 
   // silent backend ping
   useEffect(() => {
-    fetch("/api/message").catch(() => {});
+    fetch(`${API_BASE}/api/message`).catch(() => {});
   }, []);
 
   /* -----------------------------
@@ -115,7 +116,7 @@ export default function App() {
     setTournamentsError("");
     setTournamentsStatus("loading");
     try {
-      const res = await fetch("/api/tournaments");
+      const res = await fetch(`${API_BASE}/api/tournaments`);
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error();
       setTournaments(Array.isArray(data) ? data : []);
@@ -180,7 +181,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(`/api/tournaments/${selectedTid}/signup`, {
+      const res = await fetch(`${API_BASE}/api/tournaments/${selectedTid}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -229,7 +230,6 @@ export default function App() {
                   <Box w="1px" h="24px" bg="border" opacity={0.6} mx={2} />
                 </HStack>
 
-                {/* ✅ Current tournament selector (always visible) */}
                 <Surface p={4}>
                   <Stack gap={2}>
                     <HStack justify="space-between" align="center">
@@ -303,7 +303,6 @@ export default function App() {
                   </Button>
                 </HStack>
 
-                {/* Join form */}
                 {joinOpen && (
                   <Card.Root>
                     <Card.Body>

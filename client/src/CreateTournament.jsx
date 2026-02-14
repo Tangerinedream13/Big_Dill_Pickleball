@@ -15,13 +15,14 @@ import {
 } from "@chakra-ui/react";
 import { ArrowLeft, PlusCircle, Trophy } from "lucide-react";
 import { setCurrentTournamentId } from "./tournamentStore";
+import { API_BASE } from "./apiBase";
 
 function CreateTournament() {
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
-  const [gamesPerTeam, setGamesPerTeam] = useState("4"); // optional (string for input)
-  const [status, setStatus] = useState("idle"); // idle | saving | ok | error
+  const [gamesPerTeam, setGamesPerTeam] = useState("4");
+  const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
   const canSubmit = useMemo(
@@ -52,13 +53,11 @@ function CreateTournament() {
     setStatus("saving");
 
     try {
-      // If you don't have /api/tournaments yet, this will gracefully fail and show an error.
-      const res = await fetch("/api/tournaments", {
+      const res = await fetch(`${API_BASE}/api/tournaments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
-          // optional: only send if present
           ...(gptNum === null ? {} : { gamesPerTeam: gptNum }),
         }),
       });
@@ -68,15 +67,15 @@ function CreateTournament() {
         throw new Error(`HTTP ${res.status}${text ? ` — ${text}` : ""}`);
       }
 
-      setStatus("ok");
+      // If your POST returns the created tournament, you can set it as current:
+      // const created = await res.json().catch(() => null);
+      // if (created?.id) setCurrentTournamentId(String(created.id));
 
-      // Most APIs return the created tournament. If yours returns something else, this is still fine.
-      // After success, bounce back to landing page (or change to /matches or /bracket if you prefer).
+      setStatus("ok");
       navigate("/");
     } catch (err) {
       console.error(err);
 
-      // Friendly message for “route doesn’t exist yet”
       const msg = String(err?.message || "").includes("HTTP 404")
         ? "The backend doesn’t have POST /api/tournaments yet. Need to add that route."
         : "Could not create tournament. Check the console and your backend route.";
@@ -90,7 +89,6 @@ function CreateTournament() {
     <Box bg="cream.50" minH="calc(100vh - 64px) " py={{ base: 8, md: 12 }}>
       <Container maxW="6xl">
         <Stack gap={6}>
-          {/* Header */}
           <Flex
             align={{ base: "stretch", md: "center" }}
             justify="space-between"
@@ -139,11 +137,9 @@ function CreateTournament() {
             </HStack>
           </Flex>
 
-          {/* Form Card */}
           <Card.Root>
             <Card.Body>
               <Stack gap={5} as="form" onSubmit={handleCreate}>
-                {/* Error */}
                 {error ? (
                   <Box
                     border="1px solid"
@@ -159,7 +155,6 @@ function CreateTournament() {
                   </Box>
                 ) : null}
 
-                {/* Fields */}
                 <Stack gap={4}>
                   <Stack gap={2}>
                     <Text fontSize="sm" fontWeight="700">
@@ -191,7 +186,6 @@ function CreateTournament() {
                   </Stack>
                 </Stack>
 
-                {/* Actions */}
                 <HStack justify="flex-end" gap={2} pt={2}>
                   <Button variant="outline" onClick={() => navigate("/")}>
                     Cancel

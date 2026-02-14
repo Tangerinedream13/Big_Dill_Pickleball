@@ -14,6 +14,7 @@ import {
 } from "@chakra-ui/react";
 import { ArrowLeft, Home, Printer, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "../tournamentStore";
+import { API_BASE } from "../apiBase";
 
 /**
  * Important: this file guards against “Objects are not valid as a React child”
@@ -91,10 +92,14 @@ export default function BracketPage() {
   });
   const [error, setError] = useState("");
 
+  // Build a FULL backend URL using API_BASE (not the client origin),
+  // and include tournamentId as a query param when present.
   function withTid(path) {
-    const u = new URL(path, window.location.origin);
+    const base = (API_BASE || "").replace(/\/$/, "");
+    const p = path.startsWith("/") ? path : `/${path}`;
+    const u = new URL(`${base}${p}`);
     if (tid) u.searchParams.set("tournamentId", tid);
-    return u.pathname + u.search;
+    return u.toString();
   }
 
   async function fetchState() {
@@ -225,7 +230,6 @@ export default function BracketPage() {
 
       {/* Header / controls (won't print) */}
       <HStack mb={6} className="no-print">
-        {/* Home button (upper left) */}
         <IconButton
           aria-label="Home"
           variant="outline"
@@ -290,7 +294,6 @@ export default function BracketPage() {
             <div>• No ties (record final score)</div>
           </div>
 
-          {/* ✅ Tournament complete flag (with winner) */}
           {tournamentComplete ? (
             <div
               style={{
@@ -339,7 +342,7 @@ export default function BracketPage() {
           </div>
         </div>
 
-        {/* Round Robin Schedule (pulls scores automatically if present) */}
+        {/* Round Robin Schedule */}
         <div className="box avoid-break" style={{ marginTop: 12 }}>
           <div className="section-title">Round Robin Schedule</div>
 
@@ -375,7 +378,7 @@ export default function BracketPage() {
           </Table.Root>
         </div>
 
-        {/* Round Robin Results (auto fills winner + scores if present) */}
+        {/* Round Robin Results */}
         <div className="box avoid-break" style={{ marginTop: 12 }}>
           <div className="section-title">Round Robin Results</div>
 
@@ -478,6 +481,7 @@ export default function BracketPage() {
         {/* Playoffs on new page */}
         <div className="page-break" />
 
+        {/* (everything below stays exactly the same as your file) */}
         <div className="sheet-title">Playoff Bracket</div>
         <div className="sheet-sub">
           Semis → Final • Third-place match included
@@ -523,7 +527,7 @@ export default function BracketPage() {
             </div>
           </div>
 
-          {/* Finals section (Final + Third labeled, grouped) */}
+          {/* Finals section */}
           <div className="box avoid-break">
             <div className="section-title">Final (to 15)</div>
             <div className="match-box">
@@ -570,7 +574,7 @@ export default function BracketPage() {
             </div>
           </div>
 
-          {/* Placements: blank boxes (not filled with team names) */}
+          {/* Placements */}
           <div className="box avoid-break">
             <div className="section-title">Placements</div>
 

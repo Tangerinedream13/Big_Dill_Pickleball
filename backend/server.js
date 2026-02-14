@@ -55,7 +55,7 @@ app.use(
 );
 
 // preflight
-app.options("*", cors());
+app.options(/.*/, cors());
 
 // body parsing
 app.use(express.json());

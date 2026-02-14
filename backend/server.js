@@ -33,7 +33,7 @@ const allowedOrigins = new Set([
   "http://localhost:3000",
   "http://localhost:3001",
 
-  // Railway client domain 
+  // Railway client domain
   "https://client-production-b04f.up.railway.app",
 
   // Custom domain

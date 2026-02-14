@@ -32,7 +32,13 @@ const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:3001",
+
+  // Railway client domain 
   "https://client-production-b04f.up.railway.app",
+
+  // Custom domain
+  "https://big-dill-pickleball.com",
+  "https://www.big-dill-pickleball.com",
 ]);
 
 const corsOptions = {

@@ -235,7 +235,9 @@ export default function MatchSchedule() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/tournaments/${tournamentId}/teams`);
+      const res = await fetch(
+        `${API_BASE}/api/tournaments/${tournamentId}/teams`
+      );
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
@@ -433,14 +435,14 @@ export default function MatchSchedule() {
     if (match.phase === "RR") {
       return {
         method: "PATCH",
-        url: `/api/roundrobin/matches/${match.id}/score`,
+        path: `/api/roundrobin/matches/${match.id}/score`,
       };
     }
     if (match.phase === "SF") {
-      return { method: "POST", url: `/api/playoffs/semis/${match.id}/score` };
+      return { method: "POST", path: `/api/playoffs/semis/${match.id}/score` };
     }
     if (match.phase === "FINAL" || match.phase === "THIRD") {
-      return { method: "POST", url: `/api/playoffs/finals/${match.id}/score` };
+      return { method: "POST", path: `/api/playoffs/finals/${match.id}/score` };
     }
     return null;
   }
@@ -596,7 +598,7 @@ export default function MatchSchedule() {
     }));
 
     try {
-      const res = await fetch(withTid(endpoint.url), {
+      const res = await fetch(withTid(endpoint.path), {
         method: endpoint.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

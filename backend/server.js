@@ -21,6 +21,33 @@ process.on("uncaughtException", (err) => {
 const express = require("express");
 bootLog("after express");
 
+const cors = require("cors");
+
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://client-production-b04f.up.railway.app",
+]);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // allow same-origin requests (like curl, server-to-server, or direct browser hits)
+      if (!origin) return cb(null, true);
+
+      if (allowedOrigins.has(origin)) return cb(null, true);
+
+      return cb(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// Make sure OPTIONS preflight requests succeed
+app.options("*", cors());
+
 const pool = require("./db");
 bootLog("after db");
 
@@ -98,7 +125,8 @@ async function getDefaultTournamentId() {
   const r = await pool.query(
     "select id from tournaments order by id desc limit 1;"
   );
-  if (r.rowCount === 0) throw new Error("No tournaments found. Seed one first.");
+  if (r.rowCount === 0)
+    throw new Error("No tournaments found. Seed one first.");
   return String(r.rows[0].id);
 }
 
@@ -383,7 +411,9 @@ app.get("/api/tournament/state", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",
@@ -636,7 +666,9 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
     }
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",
@@ -672,7 +704,9 @@ app.post("/api/playoffs/generate", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
 
     if (teams.length < 4) {
       return res.status(409).json({
@@ -832,7 +866,9 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     }
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",
       "THIRD",
@@ -909,7 +945,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     );
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",

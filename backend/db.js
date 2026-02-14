@@ -1,14 +1,15 @@
 // backend/db.js
 const { Pool } = require("pg");
 
-const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+const isProduction = process.env.NODE_ENV === "production";
 
 const pool = new Pool(
   process.env.DATABASE_URL
     ? {
         connectionString: process.env.DATABASE_URL,
-        // Railway Postgres often requires SSL
-        ssl: { rejectUnauthorized: false },
+        ssl: {
+          rejectUnauthorized: false, // required for Railway Postgres
+        },
       }
     : {
         host: process.env.PGHOST || "localhost",
@@ -18,6 +19,16 @@ const pool = new Pool(
         database: process.env.PGDATABASE || "bigdill",
       }
 );
+
+// Optional: confirm DB connection on boot
+pool
+  .query("select now();")
+  .then(() => {
+    console.log("PostgreSQL connected");
+  })
+  .catch((err) => {
+    console.error("PostgreSQL connection error:", err.message);
+  });
 
 pool.on("error", (err) => {
   console.error("Unexpected PG pool error:", err);

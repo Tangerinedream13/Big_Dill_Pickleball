@@ -435,7 +435,7 @@ export default function MatchSchedule() {
     if (match.phase === "RR") {
       return {
         method: "PATCH",
-        path: `/api/roundrobin/matches/${match.id}/score`,
+        url: `/api/roundrobin/matches/${match.id}/score`,
       };
     }
     if (match.phase === "SF") {

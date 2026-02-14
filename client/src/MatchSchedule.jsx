@@ -235,7 +235,9 @@ export default function MatchSchedule() {
     }
 
     try {
-      const res = await fetch(`/api/tournaments/${tournamentId}/teams`);
+      const res = await fetch(
+        `${API_BASE}/api/tournaments/${tournamentId}/teams`
+      );
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 

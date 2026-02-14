@@ -10,5 +10,5 @@ const defaultProdApi =
   host.endsWith(".up.railway.app")
     ? "https://api.big-dill-pickleball.com"
     : "";
-
 export const API_BASE = envBase || defaultProdApi || "";
+ 

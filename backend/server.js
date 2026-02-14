@@ -22,12 +22,10 @@ const cors = require("cors");
 const path = require("path");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 /* -----------------------------
    CORS
-   - IMPORTANT: do NOT throw errors in the origin callback
-   - If blocked, return (null, false) so Express responds cleanly.
 ------------------------------ */
 
 const allowedOrigins = new Set([
@@ -37,27 +35,14 @@ const allowedOrigins = new Set([
   "https://client-production-b04f.up.railway.app",
 ]);
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // allow curl/postman/server-to-server requests
-      if (!origin) return cb(null, true);
-
-      if (allowedOrigins.has(origin)) return cb(null, true);
-
-      // block silently (do not throw)
-      return cb(null, false);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
 const corsOptions = {
   origin: (origin, cb) => {
+    // allow curl/postman/server-to-server requests
     if (!origin) return cb(null, true);
+
     if (allowedOrigins.has(origin)) return cb(null, true);
+
+    // block silently (do not throw)
     return cb(null, false);
   },
   credentials: true,
@@ -66,8 +51,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-app.options(/.*/, cors(corsOptions));
+app.options(/.*/, cors(corsOptions)); // preflight
 
 // body parsing
 app.use(express.json());

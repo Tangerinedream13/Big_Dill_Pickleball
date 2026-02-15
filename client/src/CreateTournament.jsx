@@ -24,16 +24,17 @@ import {
 } from "./tournamentStore";
 import { API_BASE } from "./apiBase";
 import StickyPageHeader from "./components/StickyPageHeader";
+import usePageTitle from "./hooks/usePageTitle";
 
 function CreateTournament() {
   const navigate = useNavigate();
+  usePageTitle("Create Tournament");
 
   const [name, setName] = useState("");
   const [gamesPerTeam, setGamesPerTeam] = useState("4");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
-  // ✅ #1: make current tournament reactive
   const [currentTid, setCurrentTid] = useState(getCurrentTournamentId());
 
   useEffect(() => {
@@ -484,7 +485,7 @@ function CreateTournament() {
                               onClick={() => {
                                 const id = String(t.id);
                                 setCurrentTournamentId(id);
-                                setCurrentTid(id); // ✅ immediate badge update
+                                setCurrentTid(id);
                                 navigate("/");
                               }}
                               disabled={isCurrent}

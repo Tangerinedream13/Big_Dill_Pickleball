@@ -1,5 +1,4 @@
 // client/src/MatchSchedule.jsx
-console.log("MatchSchedule mounted");
 import { API_BASE } from "./apiBase";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -37,6 +36,7 @@ import {
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 import StickyPageHeader from "./components/StickyPageHeader";
+import usePageTitle from "./hooks/usePageTitle";
 
 /* -----------------------------
    Helpers
@@ -189,6 +189,10 @@ function MatchesMiniList({ matches, teamDisplay }) {
 }
 
 export default function MatchSchedule() {
+  usePageTitle("Matches");
+  useEffect(() => {
+    console.log("MatchSchedule mounted");
+  }, []);
   const navigate = useNavigate();
 
   const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament

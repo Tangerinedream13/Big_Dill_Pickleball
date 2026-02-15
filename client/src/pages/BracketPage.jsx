@@ -15,6 +15,7 @@ import {
 import { ArrowLeft, Home, Printer, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "../tournamentStore";
 import { API_BASE } from "../apiBase";
+import usePageTitle from "../hooks/usePageTitle";
 
 /**
  * Important: this file guards against “Objects are not valid as a React child”
@@ -77,6 +78,7 @@ function renderScoreOrBox(score) {
 }
 
 export default function BracketPage() {
+  usePageTitle("Bracket");
   const navigate = useNavigate();
   const tid = getCurrentTournamentId();
 

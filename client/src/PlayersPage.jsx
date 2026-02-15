@@ -24,7 +24,6 @@ import {
   Plus,
   Search,
   Trash2,
-  UserRound,
   ArrowLeft,
   Users,
   User,
@@ -36,6 +35,7 @@ import { consumeOptimisticPlayer } from "./optimisticPlayerStore";
 import { getCurrentTournamentId } from "./tournamentStore";
 import StickyPageHeader from "./components/StickyPageHeader";
 import { API_BASE } from "./apiBase";
+import usePageTitle from "./hooks/usePageTitle";
 
 /* -----------------------------
    DUPR helpers
@@ -59,6 +59,8 @@ function formatDupr(dupr) {
 }
 
 export default function PlayersPage() {
+  usePageTitle("Players");
+
   const navigate = useNavigate();
   const tid = getCurrentTournamentId();
 

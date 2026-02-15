@@ -32,6 +32,17 @@ import {
 } from "./tournamentStore";
 import { setOptimisticPlayer } from "./optimisticPlayerStore";
 import { API_BASE } from "./apiBase";
+import { useEffect } from "react";
+
+export default function usePageTitle(title) {
+  useEffect(() => {
+    if (!title) {
+      document.title = "Big Dill";
+      return;
+    }
+    document.title = `${title} | Big Dill`;
+  }, [title]);
+}
 
 /* -----------------------------
    Shared layout components

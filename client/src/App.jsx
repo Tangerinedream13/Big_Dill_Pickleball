@@ -16,7 +16,15 @@ import {
   Select,
   createListCollection,
 } from "@chakra-ui/react";
-import { Trophy, Users, CalendarDays, Plus, LogIn, ChevronDown } from "lucide-react";
+import {
+  Trophy,
+  Users,
+  CalendarDays,
+  Plus,
+  LogIn,
+  ChevronDown,
+  Settings,
+} from "lucide-react";
 
 import heroImg from "./assets/pickleball-court.png";
 import {
@@ -105,7 +113,9 @@ export default function App() {
   const [tournaments, setTournaments] = useState([]);
   const [tournamentsError, setTournamentsError] = useState("");
 
-  const [selectedTid, setSelectedTid] = useState(getCurrentTournamentId() || "");
+  const [selectedTid, setSelectedTid] = useState(
+    getCurrentTournamentId() || ""
+  );
 
   async function loadTournaments() {
     setTournamentsError("");
@@ -282,24 +292,26 @@ export default function App() {
                   </Stack>
                 </Surface>
 
-                <HStack>
+                <Stack direction="column" gap={3} align="stretch">
                   <Button
                     bg="club.900"
                     color="white"
                     onClick={() => setJoinOpen((v) => !v)}
                   >
                     <LogIn size={18} />
-                    {joinOpen ? "Close Join" : "Join a Tournament"}
+                    {joinOpen ? "Close Join" : "Join Tournament"}
                   </Button>
 
                   <Button
-                    variant="pickle"
+                    bg="club.900"
+                    color="white"
+                    _hover={{ bg: "club.800" }}
                     onClick={() => navigate("/tournaments/new")}
                   >
-                    <Plus size={18} />
-                    Create Tournament
+                    <Settings size={18} />
+                    Manage Tournament
                   </Button>
-                </HStack>
+                </Stack>
 
                 {joinOpen && (
                   <Card.Root>

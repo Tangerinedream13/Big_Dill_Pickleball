@@ -187,7 +187,7 @@ function MatchesMiniList({ matches, teamDisplay }) {
   );
 }
 
-export default function MatchSchedule() {
+export default function PlayersPage() {
   const navigate = useNavigate();
 
   const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament

@@ -16,14 +16,7 @@ import {
   Select,
   createListCollection,
 } from "@chakra-ui/react";
-import {
-  Trophy,
-  Users,
-  CalendarDays,
-  Plus,
-  LogIn,
-  ChevronDown,
-} from "lucide-react";
+import { Trophy, Users, CalendarDays, Plus, LogIn, ChevronDown } from "lucide-react";
 
 import heroImg from "./assets/pickleball-hero.jpg";
 import {
@@ -32,17 +25,7 @@ import {
 } from "./tournamentStore";
 import { setOptimisticPlayer } from "./optimisticPlayerStore";
 import { API_BASE } from "./apiBase";
-import { useEffect } from "react";
-
-export default function usePageTitle(title) {
-  useEffect(() => {
-    if (!title) {
-      document.title = "Big Dill";
-      return;
-    }
-    document.title = `${title} | Big Dill`;
-  }, [title]);
-}
+import usePageTitle from "./hooks/usePageTitle";
 
 /* -----------------------------
    Shared layout components
@@ -104,11 +87,14 @@ function ActionTile({ icon, title, desc, cta, onClick, disabled = false }) {
 ------------------------------ */
 
 export default function App() {
+  usePageTitle("Home");
+
   const navigate = useNavigate();
 
   // silent backend ping
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* -----------------------------
@@ -119,9 +105,7 @@ export default function App() {
   const [tournaments, setTournaments] = useState([]);
   const [tournamentsError, setTournamentsError] = useState("");
 
-  const [selectedTid, setSelectedTid] = useState(
-    getCurrentTournamentId() || ""
-  );
+  const [selectedTid, setSelectedTid] = useState(getCurrentTournamentId() || "");
 
   async function loadTournaments() {
     setTournamentsError("");
@@ -192,13 +176,16 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(`${API_BASE}/api/tournaments/${selectedTid}/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        `${API_BASE}/api/tournaments/${selectedTid}/signup`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error);
 
       // OPTIMISTIC PLAYER WRITE (shared store)

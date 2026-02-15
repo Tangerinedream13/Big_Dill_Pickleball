@@ -264,7 +264,7 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(withTid("/api/players"), {
+      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/players`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, duprRating }),
@@ -288,9 +288,12 @@ export default function PlayersPage() {
     if (!confirm("Delete this player?")) return;
 
     try {
-      const res = await fetch(withTid(`/api/players/${id}`), {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `${API_BASE}/api/tournaments/${tid}/players/${id}`,
+        {
+          method: "DELETE",
+        }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       await loadPlayers();

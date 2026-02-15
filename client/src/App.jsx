@@ -18,7 +18,7 @@ import {
 } from "@chakra-ui/react";
 import { Trophy, Users, CalendarDays, Plus, LogIn, ChevronDown } from "lucide-react";
 
-import heroImg from "./assets/pickleball-hero.jpg";
+import heroImg from "./assets/pickleball-court.png";
 import {
   setCurrentTournamentId,
   getCurrentTournamentId,

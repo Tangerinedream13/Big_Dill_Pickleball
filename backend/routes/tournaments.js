@@ -6,7 +6,9 @@ const pool = require("../db");
 function errToMessage(err) {
   if (!err) return "Unknown error";
   if (typeof err === "string") return err;
-  return err.message || err.detail || err.hint || err.code || JSON.stringify(err);
+  return (
+    err.message || err.detail || err.hint || err.code || JSON.stringify(err)
+  );
 }
 
 function parseId(v) {
@@ -55,6 +57,85 @@ router.post("/", async (req, res) => {
   }
 });
 
+// DELETE /api/tournaments/:id
+// Deletes the tournament and tournament-scoped data.
+// If tournament doesn't exist -> 404
+// Otherwise deletes matches + joins, then tournament.
+router.delete("/:id", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Ensure tournament exists first so we can return a clean 404
+    const exists = await client.query(
+      `select id from tournaments where id = $1;`,
+      [tournamentId]
+    );
+    if (exists.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.json({
+        ok: true,
+        deletedTournamentId: String(tournamentId),
+        message: "Tournament already deleted.",
+      });
+    }
+
+    // Delete matches first
+    await client.query(`delete from matches where tournament_id = $1;`, [
+      tournamentId,
+    ]);
+
+    // Get team IDs linked to this tournament
+    const teamIdsRes = await client.query(
+      `select team_id from tournament_teams where tournament_id = $1;`,
+      [tournamentId]
+    );
+    const teamIds = teamIdsRes.rows.map((r) => r.team_id);
+
+    // Remove tournament -> team links
+    await client.query(
+      `delete from tournament_teams where tournament_id = $1;`,
+      [tournamentId]
+    );
+
+    // Remove team players + teams (if any exist)
+    if (teamIds.length) {
+      await client.query(
+        `delete from team_players where team_id = any($1::int[]);`,
+        [teamIds]
+      );
+      await client.query(`delete from teams where id = any($1::int[]);`, [
+        teamIds,
+      ]);
+    }
+
+    // Remove tournament player links
+    await client.query(
+      `delete from tournament_players where tournament_id = $1;`,
+      [tournamentId]
+    );
+
+    // Delete the tournament row
+    await client.query(`delete from tournaments where id = $1;`, [
+      tournamentId,
+    ]);
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, deletedTournamentId: String(tournamentId) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("DELETE /api/tournaments/:id error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  } finally {
+    client.release();
+  }
+});
+
 /* ------------------ OPTION A: TOURNAMENT DOUBLES TEAMS ------------------ */
 /**
  * Shape returned from GET must match PlayersPage.jsx:
@@ -67,7 +148,8 @@ router.post("/", async (req, res) => {
 // GET /api/tournaments/:id/teams  (list doubles teams + members)
 router.get("/:id/teams", async (req, res) => {
   const tournamentId = parseId(req.params.id);
-  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+  if (!tournamentId)
+    return res.status(400).json({ error: "Invalid tournament id." });
 
   try {
     const r = await pool.query(
@@ -112,9 +194,12 @@ router.post("/:id/teams", async (req, res) => {
   const playerBId = parseId(req.body?.playerBId);
   const requestedName = (req.body?.teamName ?? "").toString().trim();
 
-  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+  if (!tournamentId)
+    return res.status(400).json({ error: "Invalid tournament id." });
   if (!playerAId || !playerBId)
-    return res.status(400).json({ error: "playerAId and playerBId are required." });
+    return res
+      .status(400)
+      .json({ error: "playerAId and playerBId are required." });
   if (playerAId === playerBId)
     return res.status(400).json({ error: "Pick two different players." });
 
@@ -151,7 +236,9 @@ router.post("/:id/teams", async (req, res) => {
     );
 
     if (alreadyOnTeam.rowCount > 0) {
-      throw new Error("One of those players is already on a team in this tournament.");
+      throw new Error(
+        "One of those players is already on a team in this tournament."
+      );
     }
 
     // Auto-name if not provided
@@ -204,7 +291,8 @@ router.post("/:id/teams", async (req, res) => {
 router.delete("/:id/teams/:teamId", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   const teamId = parseId(req.params.teamId);
-  if (!tournamentId) return res.status(400).json({ error: "Invalid tournament id." });
+  if (!tournamentId)
+    return res.status(400).json({ error: "Invalid tournament id." });
   if (!teamId) return res.status(400).json({ error: "Invalid team id." });
 
   const client = await pool.connect();
@@ -218,7 +306,9 @@ router.delete("/:id/teams/:teamId", async (req, res) => {
     );
 
     // Remove team players
-    await client.query(`delete from team_players where team_id = $1;`, [teamId]);
+    await client.query(`delete from team_players where team_id = $1;`, [
+      teamId,
+    ]);
 
     // Remove team (safe if teams are only used in one tournament)
     await client.query(`delete from teams where id = $1;`, [teamId]);

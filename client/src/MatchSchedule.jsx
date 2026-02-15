@@ -1008,7 +1008,12 @@ export default function MatchSchedule() {
               <Button
                 variant="outline"
                 onClick={resetPlayoffs}
-                disabled={!tid || resettingPlayoffs}
+                disabled={
+                  !tid ||
+                  resettingPlayoffs ||
+                  tournamentComplete ||
+                  (!semisExist && !finalsExist)
+                }
               >
                 <HStack gap={2}>
                   <Eraser size={16} />

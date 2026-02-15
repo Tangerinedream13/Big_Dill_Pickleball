@@ -1,4 +1,5 @@
 // client/src/MatchSchedule.jsx
+console.log("MatchSchedule mounted");
 import { API_BASE } from "./apiBase";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";

@@ -222,9 +222,12 @@ export default function MatchSchedule() {
   const tid = getCurrentTournamentId();
 
   function withTid(path) {
-    const base = (API_BASE || window.location.origin).replace(/\/$/, "");
+    const base = (API_BASE || "").replace(/\/$/, "");
     const p = String(path || "").startsWith("/") ? path : `/${path}`;
-    const u = new URL(`${base}${p}`);
+    const u = base
+      ? new URL(`${base}${p}`)
+      : new URL(p, window.location.origin);
+
     if (tid) u.searchParams.set("tournamentId", tid);
     return u.toString();
   }
@@ -670,13 +673,23 @@ export default function MatchSchedule() {
       const res = await fetch(withTid("/api/playoffs/reset"), {
         method: "POST",
       });
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (typeof data?.deleted === "number") {
+        if (data.deleted > 0) {
+          setSavedMsg(`Playoffs reset ✅ (${data.deleted} deleted)`);
+        } else {
+          setSavedMsg(data?.message || "No playoffs to reset.");
+        }
+        setTimeout(() => setSavedMsg(""), 2500);
+      }
+
       await loadState();
       setEditMode({});
     } catch (e) {
       console.error(e);
-      setResetPlayoffsError(e.message || "Could not reset playoffs.");
+      setResetPlayoffsError(e?.message || "Could not reset playoffs.");
     } finally {
       setResettingPlayoffs(false);
     }
@@ -995,7 +1008,12 @@ export default function MatchSchedule() {
               <Button
                 variant="outline"
                 onClick={resetPlayoffs}
-                disabled={!tid || resettingPlayoffs}
+                disabled={
+                  !tid ||
+                  resettingPlayoffs ||
+                  tournamentComplete ||
+                  (!semisExist && !finalsExist)
+                }
               >
                 <HStack gap={2}>
                   <Eraser size={16} />

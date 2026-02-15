@@ -163,6 +163,43 @@ async function resolveTournamentId(req) {
   return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
+/* -----------------------------
+   Playoffs
+------------------------------ */
+
+// Reset playoffs only (SF / FINAL / THIRD). Idempotent.
+app.post("/api/playoffs/reset", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+
+    // Delete only playoff phases
+    const result = await pool.query(
+      `
+      delete from matches
+      where tournament_id = $1
+        and phase in ('SF', 'FINAL', 'THIRD');
+      `,
+      [tournamentId]
+    );
+
+    const deleted = result.rowCount || 0;
+
+    if (deleted === 0) {
+      return res.json({
+        ok: true,
+        tournamentId,
+        deleted: 0,
+        message: "No playoffs to reset.",
+      });
+    }
+
+    return res.json({ ok: true, tournamentId, deleted });
+  } catch (err) {
+    console.error("Playoffs reset error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
 async function getTeamsForTournament(tournamentId) {
   const r = await pool.query(
     `

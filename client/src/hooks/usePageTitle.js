@@ -2,8 +2,7 @@ import { useEffect } from "react";
 
 export default function usePageTitle(title) {
   useEffect(() => {
-    const suffix = " | Big Dill";
-    document.title = title ? `${title}${suffix}` : `Big Dill${suffix}`;
+    const base = "Big Dill";
+    document.title = title ? `${title} | ${base}` : base;
   }, [title]);
 }
-

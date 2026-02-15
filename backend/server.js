@@ -163,43 +163,6 @@ async function resolveTournamentId(req) {
   return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
-/* -----------------------------
-   Playoffs
------------------------------- */
-
-// Reset playoffs only (SF / FINAL / THIRD). Idempotent.
-app.post("/api/playoffs/reset", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    // Delete only playoff phases
-    const result = await pool.query(
-      `
-      delete from matches
-      where tournament_id = $1
-        and phase in ('SF', 'FINAL', 'THIRD');
-      `,
-      [tournamentId]
-    );
-
-    const deleted = result.rowCount || 0;
-
-    if (deleted === 0) {
-      return res.json({
-        ok: true,
-        tournamentId,
-        deleted: 0,
-        message: "No playoffs to reset.",
-      });
-    }
-
-    return res.json({ ok: true, tournamentId, deleted });
-  } catch (err) {
-    console.error("Playoffs reset error:", err);
-    res.status(500).json({ error: errToMessage(err) });
-  }
-});
-
 async function getTeamsForTournament(tournamentId) {
   const r = await pool.query(
     `
@@ -212,48 +175,6 @@ async function getTeamsForTournament(tournamentId) {
     [tournamentId]
   );
   return r.rows;
-}
-
-// Compute placements from completed playoff matches (FINAL + THIRD winners)
-function computePlacementsFromMatches({ semis, finals }) {
-  const byId = new Map();
-  for (const m of [...(semis ?? []), ...(finals ?? [])]) {
-    byId.set(String(m.id), m);
-  }
-
-  const final = byId.get("FINAL");
-  const third = byId.get("THIRD");
-
-  if (!final?.winnerId || !third?.winnerId) return null;
-
-  const champion = String(final.winnerId);
-  const runnerUp =
-    String(final.winnerId) === String(final.teamAId)
-      ? String(final.teamBId)
-      : String(final.teamAId);
-
-  const thirdPlace = String(third.winnerId);
-  const fourthPlace =
-    String(third.winnerId) === String(third.teamAId)
-      ? String(third.teamBId)
-      : String(third.teamAId);
-
-  return { champion, runnerUp, third: thirdPlace, fourth: fourthPlace };
-}
-
-// Decorate placements with team names so UI can render directly
-function decoratePlacementsWithTeamNames(placements, teams) {
-  if (!placements) return null;
-
-  const nameById = new Map((teams ?? []).map((t) => [String(t.id), t.name]));
-  const nameFor = (id) => nameById.get(String(id)) ?? `Team ${id}`;
-
-  return {
-    champion: { id: placements.champion, name: nameFor(placements.champion) },
-    runnerUp: { id: placements.runnerUp, name: nameFor(placements.runnerUp) },
-    third: { id: placements.third, name: nameFor(placements.third) },
-    fourth: { id: placements.fourth, name: nameFor(placements.fourth) },
-  };
 }
 
 function parseISODate(v) {
@@ -312,6 +233,84 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     court: m.court,
   }));
 }
+
+// Compute placements from completed playoff matches (FINAL + THIRD winners)
+function computePlacementsFromMatches({ semis, finals }) {
+  const byId = new Map();
+  for (const m of [...(semis ?? []), ...(finals ?? [])]) {
+    byId.set(String(m.id), m);
+  }
+
+  const final = byId.get("FINAL");
+  const third = byId.get("THIRD");
+
+  if (!final?.winnerId || !third?.winnerId) return null;
+
+  const champion = String(final.winnerId);
+  const runnerUp =
+    String(final.winnerId) === String(final.teamAId)
+      ? String(final.teamBId)
+      : String(final.teamAId);
+
+  const thirdPlace = String(third.winnerId);
+  const fourthPlace =
+    String(third.winnerId) === String(third.teamAId)
+      ? String(third.teamBId)
+      : String(third.teamAId);
+
+  return { champion, runnerUp, third: thirdPlace, fourth: fourthPlace };
+}
+
+// Decorate placements with team names so UI can render directly
+function decoratePlacementsWithTeamNames(placements, teams) {
+  if (!placements) return null;
+
+  const nameById = new Map((teams ?? []).map((t) => [String(t.id), t.name]));
+  const nameFor = (id) => nameById.get(String(id)) ?? `Team ${id}`;
+
+  return {
+    champion: { id: placements.champion, name: nameFor(placements.champion) },
+    runnerUp: { id: placements.runnerUp, name: nameFor(placements.runnerUp) },
+    third: { id: placements.third, name: nameFor(placements.third) },
+    fourth: { id: placements.fourth, name: nameFor(placements.fourth) },
+  };
+}
+
+/* -----------------------------
+   Playoffs
+------------------------------ */
+
+// Reset playoffs only (SF / FINAL / THIRD). Idempotent.
+app.post("/api/playoffs/reset", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+
+    const result = await pool.query(
+      `
+      delete from matches
+      where tournament_id = $1
+        and phase in ('SF', 'FINAL', 'THIRD');
+      `,
+      [tournamentId]
+    );
+
+    const deleted = result.rowCount || 0;
+
+    if (deleted === 0) {
+      return res.json({
+        ok: true,
+        tournamentId,
+        deleted: 0,
+        message: "No playoffs to reset.",
+      });
+    }
+
+    return res.json({ ok: true, tournamentId, deleted });
+  } catch (err) {
+    console.error("Playoffs reset error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
 
 /* -----------------------------
   Playoffs Generate (Semifinals)
@@ -409,6 +408,315 @@ app.post("/api/playoffs/generate", async (req, res) => {
   }
 });
 
+
+/* -----------------------------
+  Playoffs: Score Semis + Finals (15-point + edit + scratch + forfeit)
+  - Semis:  POST /api/playoffs/semis/:id/score   (SF1, SF2)
+  - Finals: POST /api/playoffs/finals/:id/score (FINAL, THIRD)
+
+  Body options:
+  - normal scoring: { "scoreA": 15, "scoreB": 13 }
+  - forfeit/override: { "winnerId": 42 }      (clears scores)
+  - scratch/clear: { "clear": true }          (clears scores + winner)
+------------------------------ */
+
+function parseBool(v) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v == null) return false;
+  const s = String(v).toLowerCase().trim();
+  return s === "true" || s === "1" || s === "yes";
+}
+
+async function finalsAreScored(tournamentId) {
+  const r = await pool.query(
+    `
+    select code, score_a, score_b, winner_id
+    from matches
+    where tournament_id = $1
+      and phase in ('FINAL','THIRD')
+    limit 1;
+    `,
+    [tournamentId]
+  );
+
+  if (r.rowCount === 0) return false;
+
+  // treat as "scored" if ANY score or winner is set
+  return r.rows.some(
+    (m) => m.winner_id !== null || m.score_a !== null || m.score_b !== null
+  );
+}
+
+async function clearMatch({ tournamentId, phase, code }) {
+  await pool.query(
+    `
+    update matches
+    set score_a = null, score_b = null, winner_id = null
+    where tournament_id = $1 and phase = $2 and code = $3;
+    `,
+    [tournamentId, phase, code]
+  );
+}
+
+async function setWinnerOnly({ tournamentId, phase, code, winnerId }) {
+  await pool.query(
+    `
+    update matches
+    set score_a = null, score_b = null, winner_id = $1
+    where tournament_id = $2 and phase = $3 and code = $4;
+    `,
+    [winnerId, tournamentId, phase, code]
+  );
+}
+
+async function setScore({ tournamentId, phase, code, scoreA, scoreB, winnerId }) {
+  await pool.query(
+    `
+    update matches
+    set score_a = $1, score_b = $2, winner_id = $3
+    where tournament_id = $4 and phase = $5 and code = $6;
+    `,
+    [scoreA, scoreB, winnerId, tournamentId, phase, code]
+  );
+}
+
+// Ensure FINAL + THIRD exist once both semis have winners.
+// If finals already exist but are NOT scored, we recreate them to match semis.
+// If finals ARE scored, we block changing semis (handled before calling this).
+async function ensureFinalsFromSemis(tournamentId) {
+  const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
+  const sf1 = semis.find((m) => String(m.id) === "SF1");
+  const sf2 = semis.find((m) => String(m.id) === "SF2");
+
+  if (!sf1?.winnerId || !sf2?.winnerId) return;
+
+  const loserId = (match) =>
+    String(match.winnerId) === String(match.teamAId)
+      ? String(match.teamBId)
+      : String(match.teamAId);
+
+  const sf1Loser = loserId(sf1);
+  const sf2Loser = loserId(sf2);
+
+  // finals not scored: rebuild to match current semis
+  await pool.query(
+    `
+    delete from matches
+    where tournament_id = $1 and phase in ('FINAL','THIRD');
+    `,
+    [tournamentId]
+  );
+
+  await pool.query(
+    `
+    insert into matches (tournament_id, code, phase, team_a_id, team_b_id)
+    values
+      ($1, 'FINAL', 'FINAL', $2, $3),
+      ($1, 'THIRD', 'THIRD', $4, $5);
+    `,
+    [tournamentId, sf1.winnerId, sf2.winnerId, sf1Loser, sf2Loser]
+  );
+}
+
+// Return state shape your UI expects
+async function sendState(tournamentId, res) {
+  const teams = await getTeamsForTournament(tournamentId);
+  const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+  const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
+  const finals = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+
+  const standings = engine.computeStandings(
+    teams.map((t) => t.id),
+    rrMatches
+  );
+
+  const placementsRaw = computePlacementsFromMatches({ semis, finals });
+  const placements = decoratePlacementsWithTeamNames(placementsRaw, teams);
+
+  return res.json({
+    ok: true,
+    tournamentId,
+    teams,
+    rrMatches,
+    standings,
+    semis,
+    finals,
+    placements,
+  });
+}
+
+/* -----------------------------
+  Playoffs: Score Semis
+------------------------------ */
+app.post("/api/playoffs/semis/:id/score", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+    const id = String(req.params.id || "").toUpperCase();
+
+    if (id !== "SF1" && id !== "SF2") {
+      return res.status(400).json({ error: "Invalid semifinal id. Use SF1 or SF2." });
+    }
+
+    // Match must exist
+    const mRes = await pool.query(
+      `
+      select team_a_id as "teamAId", team_b_id as "teamBId"
+      from matches
+      where tournament_id = $1 and phase = 'SF' and code = $2
+      `,
+      [tournamentId, id]
+    );
+    if (mRes.rowCount === 0) {
+      return res.status(404).json({ error: `Semifinal not found: ${id}` });
+    }
+    const m = mRes.rows[0];
+
+    // If finals already scored, don't allow semis edits
+    if (await finalsAreScored(tournamentId)) {
+      return res.status(409).json({
+        error: "Finals already scored. Reset playoffs before changing semis.",
+      });
+    }
+
+    const clear = parseBool(req.body?.clear);
+    const winnerIdRaw = req.body?.winnerId;
+
+    // 1) Scratch / clear
+    if (clear) {
+      await clearMatch({ tournamentId, phase: "SF", code: id });
+
+      // Also remove unscored finals (so they regenerate cleanly)
+      await pool.query(
+        `
+        delete from matches
+        where tournament_id = $1 and phase in ('FINAL','THIRD');
+        `,
+        [tournamentId]
+      );
+
+      return sendState(tournamentId, res);
+    }
+
+    // 2) Forfeit / override winner
+    if (winnerIdRaw !== undefined && winnerIdRaw !== null && winnerIdRaw !== "") {
+      const w = Number(winnerIdRaw);
+      if (!Number.isInteger(w)) {
+        return res.status(400).json({ error: "winnerId must be an integer." });
+      }
+      const a = Number(m.teamAId);
+      const b = Number(m.teamBId);
+      if (w !== a && w !== b) {
+        return res.status(400).json({ error: "winnerId must be Team A or Team B for this match." });
+      }
+
+      await setWinnerOnly({ tournamentId, phase: "SF", code: id, winnerId: w });
+      await ensureFinalsFromSemis(tournamentId);
+
+      return sendState(tournamentId, res);
+    }
+
+    // 3) Normal scoring (PLAYOFFS = 15 win-by-2)
+    const { scoreA, scoreB } = req.body;
+
+    const msg = validatePickleballScore(scoreA, scoreB, { playTo: 15, winBy: 2 });
+    if (msg) return res.status(400).json({ error: msg });
+
+    const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
+
+    await setScore({
+      tournamentId,
+      phase: "SF",
+      code: id,
+      scoreA,
+      scoreB,
+      winnerId,
+    });
+
+    await ensureFinalsFromSemis(tournamentId);
+
+    return sendState(tournamentId, res);
+  } catch (err) {
+    console.error("Semis score error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+/* -----------------------------
+  Playoffs: Score Finals + Third
+------------------------------ */
+app.post("/api/playoffs/finals/:id/score", async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req);
+    const id = String(req.params.id || "").toUpperCase();
+
+    if (id !== "FINAL" && id !== "THIRD") {
+      return res.status(400).json({ error: "Invalid finals id. Use FINAL or THIRD." });
+    }
+
+    const mRes = await pool.query(
+      `
+      select team_a_id as "teamAId", team_b_id as "teamBId"
+      from matches
+      where tournament_id = $1 and code = $2 and phase = $3
+      `,
+      [tournamentId, id, id]
+    );
+
+    if (mRes.rowCount === 0) {
+      return res.status(404).json({ error: `${id} match not found.` });
+    }
+
+    const m = mRes.rows[0];
+
+    const clear = parseBool(req.body?.clear);
+    const winnerIdRaw = req.body?.winnerId;
+
+    // 1) Scratch / clear
+    if (clear) {
+      await clearMatch({ tournamentId, phase: id, code: id });
+      return sendState(tournamentId, res);
+    }
+
+    // 2) Forfeit / override winner
+    if (winnerIdRaw !== undefined && winnerIdRaw !== null && winnerIdRaw !== "") {
+      const w = Number(winnerIdRaw);
+      if (!Number.isInteger(w)) {
+        return res.status(400).json({ error: "winnerId must be an integer." });
+      }
+      const a = Number(m.teamAId);
+      const b = Number(m.teamBId);
+      if (w !== a && w !== b) {
+        return res.status(400).json({ error: "winnerId must be Team A or Team B for this match." });
+      }
+
+      await setWinnerOnly({ tournamentId, phase: id, code: id, winnerId: w });
+      return sendState(tournamentId, res);
+    }
+
+    // 3) Normal scoring (PLAYOFFS = 15 win-by-2)
+    const { scoreA, scoreB } = req.body;
+
+    const msg = validatePickleballScore(scoreA, scoreB, { playTo: 15, winBy: 2 });
+    if (msg) return res.status(400).json({ error: msg });
+
+    const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
+
+    await setScore({
+      tournamentId,
+      phase: id,
+      code: id,
+      scoreA,
+      scoreB,
+      winnerId,
+    });
+
+    return sendState(tournamentId, res);
+  } catch (err) {
+    console.error("Finals score error:", err);
+    res.status(500).json({ error: errToMessage(err) });
+  }
+});
 /* -----------------------------
    Tournament-scoped Players + Team Creation
 ------------------------------ */
@@ -476,7 +784,6 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Guard: both players must be in this tournament
     const inTournament = await client.query(
       `
       select count(*)::int as c
@@ -491,7 +798,6 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
       throw new Error("Both players must be signed up for this tournament.");
     }
 
-    // Guard: neither player can already be on a team in this tournament
     const alreadyOnTeam = await client.query(
       `
       select tp.player_id
@@ -509,7 +815,6 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
       );
     }
 
-    // Auto-name if not provided
     let finalName = requestedName;
     if (!finalName) {
       const n = await client.query(
@@ -519,20 +824,17 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
       finalName = `SPD-${tid}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
     }
 
-    // Create team
     const teamRow = await client.query(
       `insert into teams(name) values ($1) returning id, name;`,
       [finalName]
     );
     const teamId = teamRow.rows[0].id;
 
-    // Link two players to team
     await client.query(
       `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
       [teamId, playerAId, playerBId]
     );
 
-    // Add team to tournament
     await client.query(
       `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
       [tid, teamId]
@@ -916,10 +1218,7 @@ app.get("/api/players", async (req, res) => {
     );
 
     res.json(
-      result.rows.map((p) => ({
-        ...p,
-        duprTier: duprLabel(p.duprRating),
-      }))
+      result.rows.map((p) => ({ ...p, duprTier: duprLabel(p.duprRating) }))
     );
   } catch (err) {
     console.error("GET /api/players error:", err);

@@ -307,9 +307,7 @@ export default function BracketPage() {
               }}
             >
               Tournament Complete ✅{" "}
-              {tournamentWinnerLabel
-                ? `— Winner: ${tournamentWinnerLabel}`
-                : ""}
+              {tournamentWinnerLabel ? ` Winner: ${tournamentWinnerLabel}` : ""}
             </div>
           ) : null}
         </div>

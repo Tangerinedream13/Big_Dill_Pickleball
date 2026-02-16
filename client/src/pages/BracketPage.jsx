@@ -272,9 +272,7 @@ export default function BracketPage() {
 
       {/* PRINT SHEET */}
       <Box className="print-sheet">
-        <div className="sheet-title">
-          Big Dill Pickleball — Tournament Sheet
-        </div>
+        <div className="sheet-title">Big Dill Pickleball Tournament Sheet</div>
         <div className="sheet-sub">
           Tournament ID: {state.tournamentId || tid || "—"} • Printed:{" "}
           {new Date().toLocaleString()}

@@ -1,7 +1,10 @@
+// client/src/main.jsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { ChakraProvider, defaultSystem } from "@chakra-ui/react";
+import { ChakraProvider } from "@chakra-ui/react";
+
+import system from "./theme";
 
 import App from "./App.jsx";
 import PlayersPage from "./PlayersPage.jsx";
@@ -13,7 +16,7 @@ import "./index.css";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <ChakraProvider value={defaultSystem}>
+    <ChakraProvider value={system}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<App />} />

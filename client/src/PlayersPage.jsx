@@ -690,7 +690,7 @@ export default function PlayersPage() {
                   <Button
                     variant="pickle"
                     onClick={() => setOpenPlayer(true)}
-                    disabled={!tid}
+                    isDisabled={!tid}
                   >
                     Add Player
                   </Button>
@@ -721,17 +721,9 @@ export default function PlayersPage() {
                         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
 
                         return (
-                          <Table.Row
-                            key={p.id ?? p.email ?? p.name}
-                            bg={p._optimistic ? "green.50" : undefined}
-                          >
+                          <Table.Row key={p.id ?? p.email ?? p.name}>
                             <Table.Cell fontWeight="600">
                               {p.name ?? "Unnamed"}
-                              {p._optimistic ? (
-                                <Badge ml={2} variant="pickle">
-                                  Just joined
-                                </Badge>
-                              ) : null}
                             </Table.Cell>
 
                             <Table.Cell>

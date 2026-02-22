@@ -11,6 +11,11 @@ import {
   Spacer,
   Text,
   Table,
+  Stack,
+  SimpleGrid,
+  useBreakpointValue,
+  Divider,
+  Badge,
 } from "@chakra-ui/react";
 import { ArrowLeft, Home, Printer, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "../tournamentStore";
@@ -76,6 +81,55 @@ function renderScoreOrBox(score) {
     </div>
   );
 }
+function ScorePill({ value }) {
+  const s =
+    value === null || value === undefined || value === "" ? "—" : String(value);
+  return (
+    <Box
+      minW="44px"
+      textAlign="center"
+      border="1px solid"
+      borderColor="border"
+      borderRadius="md"
+      px={2}
+      py={1}
+      fontWeight="800"
+      bg="white"
+    >
+      {s}
+    </Box>
+  );
+}
+
+function MatchCard({ title, aLabel, bLabel, scoreA, scoreB, winnerLabel }) {
+  return (
+    <Box
+      border="1px solid"
+      borderColor="border"
+      borderRadius="2xl"
+      p={4}
+      bg="white"
+    >
+      <HStack justify="space-between" mb={2} wrap="wrap">
+        <Heading size="sm">{title}</Heading>
+        {winnerLabel ? (
+          <Badge variant="pickle">Winner: {winnerLabel}</Badge>
+        ) : null}
+      </HStack>
+
+      <Stack gap={2}>
+        <HStack justify="space-between" align="center">
+          <Text fontWeight="700">{aLabel}</Text>
+          <ScorePill value={scoreA} />
+        </HStack>
+        <HStack justify="space-between" align="center">
+          <Text fontWeight="700">{bLabel}</Text>
+          <ScorePill value={scoreB} />
+        </HStack>
+      </Stack>
+    </Box>
+  );
+}
 
 export default function BracketPage() {
   usePageTitle("Bracket");
@@ -93,6 +147,7 @@ export default function BracketPage() {
     tournamentId: "",
   });
   const [error, setError] = useState("");
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   // Build a FULL backend URL using API_BASE (not the client origin),
   // and include tournamentId as a query param when present.
@@ -240,7 +295,7 @@ export default function BracketPage() {
           <Home size={18} />
         </IconButton>
 
-        <Heading size="lg">Tournament Brackets</Heading>
+        <Heading size={{ base: "md", md: "lg" }}>Tournament Brackets</Heading>
 
         <Spacer />
 
@@ -271,6 +326,125 @@ export default function BracketPage() {
       {loading && teams.length === 0 ? <Text>Loading…</Text> : null}
 
       {/* PRINT SHEET */}
+
+      {/* On-screen bracket (mobile-friendly) */}
+{isMobile ? (
+  <Stack gap={4}>
+    <Box>
+      <Heading size="md" mb={1}>Bracket</Heading>
+      <Text opacity={0.75}>
+        Tournament: {state.tournamentId || tid || "—"}
+      </Text>
+    </Box>
+
+    <SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
+      <MatchCard
+        title="Semifinal 1"
+        aLabel={semis[0] ? seededTeamLabel(semis[0].teamAId) : "TBD"}
+        bLabel={semis[0] ? seededTeamLabel(semis[0].teamBId) : "TBD"}
+        scoreA={semis[0]?.scoreA}
+        scoreB={semis[0]?.scoreB}
+        winnerLabel={semis[0]?.winnerId ? seededTeamLabel(semis[0].winnerId) : ""}
+      />
+
+      <MatchCard
+        title="Semifinal 2"
+        aLabel={semis[1] ? seededTeamLabel(semis[1].teamAId) : "TBD"}
+        bLabel={semis[1] ? seededTeamLabel(semis[1].teamBId) : "TBD"}
+        scoreA={semis[1]?.scoreA}
+        scoreB={semis[1]?.scoreB}
+        winnerLabel={semis[1]?.winnerId ? seededTeamLabel(semis[1].winnerId) : ""}
+      />
+    </SimpleGrid>
+
+    <Divider />
+
+    <SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
+      <MatchCard
+        title="Final"
+        aLabel={finalMatch ? seededTeamLabel(finalMatch.teamAId) : "Winner SF1"}
+        bLabel={finalMatch ? seededTeamLabel(finalMatch.teamBId) : "Winner SF2"}
+        scoreA={finalMatch?.scoreA}
+        scoreB={finalMatch?.scoreB}
+        winnerLabel={finalMatch?.winnerId ? seededTeamLabel(finalMatch.winnerId) : ""}
+      />
+
+      <MatchCard
+        title="Third Place"
+        aLabel={thirdMatch ? seededTeamLabel(thirdMatch.teamAId) : "Loser SF1"}
+        bLabel={thirdMatch ? seededTeamLabel(thirdMatch.teamBId) : "Loser SF2"}
+        scoreA={thirdMatch?.scoreA}
+        scoreB={thirdMatch?.scoreB}
+        winnerLabel={thirdMatch?.winnerId ? seededTeamLabel(thirdMatch.winnerId) : ""}
+      />
+    </SimpleGrid>
+
+    <Divider />
+
+    <Box border="1px solid" borderColor="border" borderRadius="2xl" p={4} bg="white">
+      <Heading size="sm" mb={2}>Placements</Heading>
+      <Stack gap={2}>
+        <HStack justify="space-between">
+          <Text fontWeight="700">Champion</Text>
+          <Text fontWeight="800">{finalMatch?.winnerId ? seededTeamLabel(finalMatch.winnerId) : "—"}</Text>
+        </HStack>
+        <HStack justify="space-between">
+          <Text fontWeight="700">Runner-up</Text>
+          <Text fontWeight="800">
+            {finalMatch?.winnerId
+              ? seededTeamLabel(
+                  String(finalMatch.winnerId) === String(finalMatch.teamAId)
+                    ? finalMatch.teamBId
+                    : finalMatch.teamAId
+                )
+              : "—"}
+          </Text>
+        </HStack>
+        <HStack justify="space-between">
+          <Text fontWeight="700">Third</Text>
+          <Text fontWeight="800">{thirdMatch?.winnerId ? seededTeamLabel(thirdMatch.winnerId) : "—"}</Text>
+        </HStack>
+        <HStack justify="space-between">
+          <Text fontWeight="700">Fourth</Text>
+          <Text fontWeight="800">
+            {thirdMatch?.winnerId
+              ? seededTeamLabel(
+                  String(thirdMatch.winnerId) === String(thirdMatch.teamAId)
+                    ? thirdMatch.teamBId
+                    : thirdMatch.teamAId
+                )
+              : "—"}
+          </Text>
+        </HStack>
+      </Stack>
+    </Box>
+
+    {/* Show RR schedule as cards instead of a table */}
+    <Box border="1px solid" borderColor="border" borderRadius="2xl" p={4} bg="white">
+      <Heading size="sm" mb={2}>Round Robin</Heading>
+      <Stack gap={2}>
+        {rrForPrint.map((m) => (
+          <Box key={m.id} border="1px solid" borderColor="border" borderRadius="xl" p={3}>
+            <HStack justify="space-between" mb={1}>
+              <Text fontWeight="800">{m.id}</Text>
+              <Text fontSize="sm" opacity={0.75}>
+                {m.court ? `Court ${m.court}` : ""} {m.startTime ? `• ${fmtTime(m.startTime)}` : ""}
+              </Text>
+            </HStack>
+            <HStack justify="space-between">
+              <Text fontWeight="700">{teamLabelById(teams, m.teamAId)}</Text>
+              <ScorePill value={m.scoreA} />
+            </HStack>
+            <HStack justify="space-between" mt={2}>
+              <Text fontWeight="700">{teamLabelById(teams, m.teamBId)}</Text>
+              <ScorePill value={m.scoreB} />
+            </HStack>
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  </Stack>
+) : (
       <Box className="print-sheet">
         <div className="sheet-title">Big Dill Pickleball Tournament Sheet</div>
         <div className="sheet-sub">

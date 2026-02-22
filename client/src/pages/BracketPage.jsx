@@ -657,7 +657,383 @@ export default function BracketPage() {
       ) : (
         // Desktop / print sheet
         <Box className="print-sheet">
-          {/* ... keep the rest of your desktop/print sheet exactly as you already have it ... */}
+          <div className="sheet-title">
+            Big Dill Pickleball Tournament Sheet
+          </div>
+          <div className="sheet-sub">
+            Tournament ID: {state.tournamentId || tid || "—"} • Printed:{" "}
+            {new Date().toLocaleString()}
+          </div>
+
+          {/* Legend (RR to 11, Playoffs to 15) */}
+          <div className="box avoid-break" style={{ marginBottom: 12 }}>
+            <div className="section-title">Legend</div>
+            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+              <div>
+                • Round Robin games to <b>11</b>
+              </div>
+              <div>
+                • Semifinal & Final games to <b>15</b>
+              </div>
+              <div>
+                • Win by <b>2</b>
+              </div>
+              <div>• No ties (record final score)</div>
+            </div>
+
+            {tournamentComplete ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  border: "1px solid #1a7f37",
+                  background: "#e9fbe9",
+                  borderRadius: 10,
+                  padding: 10,
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                Tournament Complete ✅{" "}
+                {tournamentWinnerLabel
+                  ? ` Winner: ${tournamentWinnerLabel}`
+                  : ""}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Teams + Notes */}
+          <div className="grid2 avoid-break">
+            <div className="box">
+              <div className="section-title">Teams</div>
+              <div style={{ fontSize: 12 }}>
+                {teams.length === 0 ? (
+                  <div>—</div>
+                ) : (
+                  teams.map((t, i) => (
+                    <div key={t.id} style={{ display: "flex", gap: 8 }}>
+                      <div style={{ width: 20, fontWeight: 700 }}>{i + 1}.</div>
+                      <div style={{ wordBreak: "break-word" }}>
+                        {safeTeamLabel(t, `Team ${t.id}`)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="box">
+              <div className="section-title">Notes / Rules</div>
+              <div style={{ height: 140 }} />
+              <div className="line" />
+              <div style={{ height: 40 }} />
+            </div>
+          </div>
+
+          {/* Round Robin Schedule */}
+          <div className="box avoid-break" style={{ marginTop: 12 }}>
+            <div className="section-title">Round Robin Schedule</div>
+
+            <div className="table-scroll">
+              <Table.Root size="sm" className="table-min">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
+                    <Table.ColumnHeader>Team A</Table.ColumnHeader>
+                    <Table.ColumnHeader w="60px">Score</Table.ColumnHeader>
+                    <Table.ColumnHeader>Team B</Table.ColumnHeader>
+                    <Table.ColumnHeader w="60px">Score</Table.ColumnHeader>
+                    <Table.ColumnHeader w="90px">Court</Table.ColumnHeader>
+                    <Table.ColumnHeader w="180px">Time</Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {rrForPrint.map((m) => (
+                    <Table.Row key={m.id}>
+                      <Table.Cell>{m.id}</Table.Cell>
+                      <Table.Cell style={{ wordBreak: "break-word" }}>
+                        {teamLabelById(teams, m.teamAId)}
+                      </Table.Cell>
+                      <Table.Cell>{renderScoreOrBox(m.scoreA)}</Table.Cell>
+                      <Table.Cell style={{ wordBreak: "break-word" }}>
+                        {teamLabelById(teams, m.teamBId)}
+                      </Table.Cell>
+                      <Table.Cell>{renderScoreOrBox(m.scoreB)}</Table.Cell>
+                      <Table.Cell>
+                        {m.court ? `Court ${m.court}` : ""}
+                      </Table.Cell>
+                      <Table.Cell>{fmtTime(m.startTime)}</Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          </div>
+
+          {/* Round Robin Results */}
+          <div className="box avoid-break" style={{ marginTop: 12 }}>
+            <div className="section-title">Round Robin Results</div>
+
+            <div className="table-scroll">
+              <Table.Root size="sm" className="table-min">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
+                    <Table.ColumnHeader>Winner</Table.ColumnHeader>
+                    <Table.ColumnHeader w="140px">
+                      Final Score
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader>Notes</Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+
+                <Table.Body>
+                  {rrForPrint.map((m) => {
+                    const a = teamLabelById(teams, m.teamAId);
+                    const b = teamLabelById(teams, m.teamBId);
+                    const winner =
+                      m.winnerId == null
+                        ? ""
+                        : String(m.winnerId) === String(m.teamAId)
+                        ? a
+                        : b;
+
+                    const scoreText =
+                      m.scoreA != null &&
+                      m.scoreB != null &&
+                      m.scoreA !== "" &&
+                      m.scoreB !== ""
+                        ? `${m.scoreA}-${m.scoreB}`
+                        : "";
+
+                    return (
+                      <Table.Row key={`${m.id}-results`}>
+                        <Table.Cell>{m.id}</Table.Cell>
+                        <Table.Cell>
+                          {winner ? (
+                            <span style={{ fontWeight: 800 }}>{winner}</span>
+                          ) : (
+                            <div className="score-box" />
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          {scoreText ? (
+                            <div
+                              style={{
+                                border: "1px solid #222",
+                                height: 22,
+                                borderRadius: 6,
+                                display: "grid",
+                                placeItems: "center",
+                                fontWeight: 800,
+                                fontSize: 12,
+                              }}
+                            >
+                              {scoreText}
+                            </div>
+                          ) : (
+                            <div className="score-box" />
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <div className="note-box" />
+                        </Table.Cell>
+                      </Table.Row>
+                    );
+                  })}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          </div>
+
+          {/* Standings */}
+          <div className="box avoid-break" style={{ marginTop: 12 }}>
+            <div className="section-title">Standings</div>
+
+            <div className="table-scroll">
+              <Table.Root size="sm" className="table-min">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeader w="60px">Seed</Table.ColumnHeader>
+                    <Table.ColumnHeader>Team</Table.ColumnHeader>
+                    <Table.ColumnHeader w="80px">Wins</Table.ColumnHeader>
+                    <Table.ColumnHeader w="90px">Point Diff</Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {(state.standings || []).map((s, idx) => (
+                    <Table.Row key={s.teamId}>
+                      <Table.Cell>{idx + 1}</Table.Cell>
+                      <Table.Cell style={{ wordBreak: "break-word" }}>
+                        {teamLabelById(teams, s.teamId)}
+                      </Table.Cell>
+                      <Table.Cell>{s.wins}</Table.Cell>
+                      <Table.Cell>{s.pointDiff}</Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          </div>
+
+          {/* Playoffs on new page */}
+          <div className="page-break" />
+
+          <div className="sheet-title">Playoff Bracket</div>
+          <div className="sheet-sub">
+            Semis → Final • Third-place match included
+          </div>
+
+          <div className="grid3">
+            {/* Semis with seeds */}
+            <div className="box avoid-break">
+              <div className="section-title">Semifinal 1 (to 15)</div>
+              <div className="match-box">
+                <div className="match-row">
+                  <div>
+                    {semis[0] ? seededTeamLabel(semis[0].teamAId) : "TBD"}
+                  </div>
+                  {renderScoreOrBox(semis[0]?.scoreA)}
+                </div>
+                <div style={{ height: 8 }} />
+                <div className="match-row">
+                  <div>
+                    {semis[0] ? seededTeamLabel(semis[0].teamBId) : "TBD"}
+                  </div>
+                  {renderScoreOrBox(semis[0]?.scoreB)}
+                </div>
+              </div>
+
+              <div className="section-title" style={{ marginTop: 12 }}>
+                Semifinal 2 (to 15)
+              </div>
+              <div className="match-box">
+                <div className="match-row">
+                  <div>
+                    {semis[1] ? seededTeamLabel(semis[1].teamAId) : "TBD"}
+                  </div>
+                  {renderScoreOrBox(semis[1]?.scoreA)}
+                </div>
+                <div style={{ height: 8 }} />
+                <div className="match-row">
+                  <div>
+                    {semis[1] ? seededTeamLabel(semis[1].teamBId) : "TBD"}
+                  </div>
+                  {renderScoreOrBox(semis[1]?.scoreB)}
+                </div>
+              </div>
+            </div>
+
+            {/* Finals section */}
+            <div className="box avoid-break">
+              <div className="section-title">Final (to 15)</div>
+              <div className="match-box">
+                <div className="match-row">
+                  <div>
+                    {finalMatch
+                      ? seededTeamLabel(finalMatch.teamAId)
+                      : "Winner SF1"}
+                  </div>
+                  {renderScoreOrBox(finalMatch?.scoreA)}
+                </div>
+                <div style={{ height: 8 }} />
+                <div className="match-row">
+                  <div>
+                    {finalMatch
+                      ? seededTeamLabel(finalMatch.teamBId)
+                      : "Winner SF2"}
+                  </div>
+                  {renderScoreOrBox(finalMatch?.scoreB)}
+                </div>
+              </div>
+
+              <div className="section-title" style={{ marginTop: 12 }}>
+                Third Place (to 15)
+              </div>
+              <div className="match-box">
+                <div className="match-row">
+                  <div>
+                    {thirdMatch
+                      ? seededTeamLabel(thirdMatch.teamAId)
+                      : "Loser SF1"}
+                  </div>
+                  {renderScoreOrBox(thirdMatch?.scoreA)}
+                </div>
+                <div style={{ height: 8 }} />
+                <div className="match-row">
+                  <div>
+                    {thirdMatch
+                      ? seededTeamLabel(thirdMatch.teamBId)
+                      : "Loser SF2"}
+                  </div>
+                  {renderScoreOrBox(thirdMatch?.scoreB)}
+                </div>
+              </div>
+            </div>
+
+            {/* Placements */}
+            <div className="box avoid-break">
+              <div className="section-title">Placements</div>
+
+              <div style={{ fontSize: 12, lineHeight: 2 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 1fr",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <b>Champion:</b>
+                  </div>
+                  <div className="score-box" />
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 1fr",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <b>Runner-up:</b>
+                  </div>
+                  <div className="score-box" />
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 1fr",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <b>Third:</b>
+                  </div>
+                  <div className="score-box" />
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "90px 1fr",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <b>Fourth:</b>
+                  </div>
+                  <div className="score-box" />
+                </div>
+              </div>
+
+              <div className="line" />
+              <div className="section-title">Organizer signature</div>
+              <div style={{ height: 50 }} />
+            </div>
+          </div>
         </Box>
       )}
     </Container>

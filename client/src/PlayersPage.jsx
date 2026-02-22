@@ -669,13 +669,13 @@ export default function PlayersPage() {
             boxShadow="soft"
             overflow="hidden"
           >
-            <Box p={{ base: 4, md: 5 }}>
+            <Box p={{ base: 3, md: 5 }}>
               {filteredPlayers.length === 0 ? (
                 <Box
                   border="1px dashed"
                   borderColor="border"
                   borderRadius="2xl"
-                  p={{ base: 6, md: 10 }}
+                  p={{ base: 5, md: 10 }}
                   textAlign="center"
                   bg="cream.50"
                 >

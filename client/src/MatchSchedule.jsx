@@ -1160,12 +1160,15 @@ export default function MatchSchedule() {
 
               {tid && status === "ok" ? (
                 <>
-                  <Badge variant={tournamentInProgress ? "pickle" : "club"}>
-                    Tournament In Progress{" "}
-                    <Box as="span" ml={2} color="green.500">
-                      ●
-                    </Box>
-                  </Badge>
+                  {!tournamentComplete ? (
+                    <Badge variant={tournamentInProgress ? "pickle" : "club"}>
+                      Tournament In Progress{" "}
+                      <Box as="span" ml={2} color="green.500">
+                        ●
+                      </Box>
+                    </Badge>
+                  ) : null}
+
                   {tournamentComplete ? (
                     <Badge variant="pickle">Tournament Complete ✅</Badge>
                   ) : null}

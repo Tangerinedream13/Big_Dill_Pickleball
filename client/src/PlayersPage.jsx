@@ -608,7 +608,7 @@ export default function PlayersPage() {
         </Stack>
       </StickyPageHeader>
 
-      <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
+      <Container maxW="6xl" pt={{ base: 8, md: 10 }} px={{ base: 4, md: 6 }}>
         <Stack gap={6}>
           {/* Actions row (search + buttons) */}
           <Flex
@@ -886,56 +886,17 @@ export default function PlayersPage() {
                       Create Team
                     </Button>
                   </Box>
+                ) : isMobile ? (
+                  <TeamsCardList
+                    teams={teams}
+                    onRename={openRenameModal}
+                    onDelete={deleteTeam}
+                    deletingTeamId={deletingTeamId}
+                    tid={tid}
+                  />
                 ) : (
                   <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Team</Table.ColumnHeader>
-                        <Table.ColumnHeader>Players</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
-
-                    <Table.Body>
-                      {teams.map((t) => (
-                        <Table.Row key={t.id}>
-                          <Table.Cell fontWeight="700">{t.name}</Table.Cell>
-
-                          <Table.Cell>
-                            <Text fontWeight="600">
-                              {(t.players ?? [])
-                                .map((p) => p.name)
-                                .filter(Boolean)
-                                .join(" / ") || "—"}
-                            </Text>
-                          </Table.Cell>
-
-                          <Table.Cell textAlign="end">
-                            <HStack justify="flex-end" gap={2} wrap="wrap">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openRenameModal(t)}
-                                disabled={!tid}
-                              >
-                                Rename
-                              </Button>
-
-                              <IconButton
-                                aria-label="Delete team"
-                                variant="outline"
-                                onClick={() => deleteTeam(t.id)}
-                                disabled={!tid || deletingTeamId === t.id}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </HStack>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
+                    ...
                   </Table.Root>
                 )}
               </Box>

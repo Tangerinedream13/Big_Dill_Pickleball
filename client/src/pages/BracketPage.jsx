@@ -14,9 +14,7 @@ import {
   Stack,
   SimpleGrid,
   useBreakpointValue,
-  Separator,
   Badge,
-  Collapse,
 } from "@chakra-ui/react";
 import { ArrowLeft, Home, Printer, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "../tournamentStore";
@@ -375,7 +373,7 @@ export default function BracketPage() {
             />
           </SimpleGrid>
 
-          <Separator my={4} />
+          <Box h="1px" bg="border" my={4} />
 
           <SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
             <MatchCard
@@ -409,9 +407,9 @@ export default function BracketPage() {
             />
           </SimpleGrid>
 
-          <Separator />
+          <Box h="1px" bg="border" />
 
-          {/* Mobile Round Robin (collapsible) */}
+          {/* Mobile Round Robin (toggle) */}
           <Box
             border="1px solid"
             borderColor="border"
@@ -434,7 +432,7 @@ export default function BracketPage() {
               {rrForPrint.length} matches
             </Text>
 
-            <Collapse in={showRR} animateOpacity>
+            {showRR ? (
               <Stack gap={2}>
                 {rrForPrint.map((m) => (
                   <Box
@@ -468,7 +466,7 @@ export default function BracketPage() {
                   </Box>
                 ))}
               </Stack>
-            </Collapse>
+            ) : null}
           </Box>
         </Stack>
       ) : (

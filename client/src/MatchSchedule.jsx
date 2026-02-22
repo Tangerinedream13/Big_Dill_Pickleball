@@ -21,6 +21,7 @@ import {
   Table,
   Tabs,
   createListCollection,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import {
   Home,
@@ -187,6 +188,200 @@ function MatchesMiniList({ matches, teamDisplay }) {
     </Table.Root>
   );
 }
+function MatchesCardList({
+  matches,
+  edits,
+  editMode,
+  tid,
+  tournamentComplete,
+  finalsConfirmed,
+  labelForPhase,
+  displayTeamForMatch,
+  winnerText,
+  isForfeitRR,
+  hasAnyScoreOrForfeit,
+  setScore,
+  beginEdit,
+  cancelEdit,
+  saveMatch,
+  openScratch,
+}) {
+  return (
+    <Stack gap={3}>
+      {matches.map((m) => {
+        const phaseMeta = labelForPhase(m.phase);
+        const aName = displayTeamForMatch(m, m.teamAId);
+        const bName = displayTeamForMatch(m, m.teamBId);
+
+        const row = edits[m.id] ?? {
+          scoreA: "",
+          scoreB: "",
+          saving: false,
+          error: null,
+        };
+
+        const forfeited = isForfeitRR(m);
+        const isEditingThis = !!editMode[m.id];
+
+        const isFinalsMatch = m.phase === "FINAL" || m.phase === "THIRD";
+        const lockedByFinals = finalsConfirmed && !isFinalsMatch;
+
+        const locked =
+          tournamentComplete || lockedByFinals || (!!m.winnerId && !isEditingThis);
+
+        const showEdit =
+          !tournamentComplete &&
+          !lockedByFinals &&
+          !!m.winnerId &&
+          hasAnyScoreOrForfeit(m) &&
+          !isEditingThis;
+
+        const showScratch =
+          m.phase === "RR" && !tournamentComplete && !finalsConfirmed;
+
+        const hasTypedSomething =
+          (row.scoreA ?? "") !== "" || (row.scoreB ?? "") !== "";
+
+        const showSave =
+          !tournamentComplete && !locked && (isEditingThis || hasTypedSomething);
+
+        const showCancel = isEditingThis;
+
+        return (
+          <Box
+            key={`${m.phase}-${m.id}`}
+            border="1px solid"
+            borderColor="border"
+            borderRadius="2xl"
+            p={{ base: 3, md: 4 }}
+            bg={forfeited ? "gray.50" : "white"}
+          >
+            {/* Header row */}
+            <HStack justify="space-between" align="start" gap={3} wrap="wrap">
+              <HStack gap={2} wrap="wrap">
+                <Badge variant={phaseMeta.variant}>{phaseMeta.label}</Badge>
+                <Text fontWeight="800">{m.id}</Text>
+              </HStack>
+
+              {/* Actions */}
+              <HStack gap={1}>
+                {showEdit ? (
+                  <IconButton
+                    aria-label="Edit score"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => beginEdit(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <RotateCcw size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showCancel ? (
+                  <IconButton
+                    aria-label="Cancel edit"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => cancelEdit(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <X size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showSave ? (
+                  <IconButton
+                    aria-label="Save score"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => saveMatch(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <Save size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showScratch ? (
+                  <IconButton
+                    aria-label="Scratch match"
+                    title="Forfeit (clears score)"
+                    variant="ghost"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => openScratch(m)}
+                    disabled={!tid}
+                  >
+                    <Flag size={16} />
+                  </IconButton>
+                ) : null}
+              </HStack>
+            </HStack>
+
+            {/* Teams */}
+            <Box mt={2}>
+              <Text fontWeight="700">{aName}</Text>
+              <Text opacity={0.75} fontSize="sm">
+                vs {bName}
+              </Text>
+            </Box>
+
+            {/* Score inputs */}
+            <HStack mt={3} gap={2} align="center">
+              <Box flex="1">
+                <Text fontSize="xs" opacity={0.7} mb={1}>
+                  Score A
+                </Text>
+                <Input
+                  inputMode="numeric"
+                  value={row.scoreA}
+                  onChange={(e) => setScore(m.id, "scoreA", e.target.value)}
+                  disabled={!tid || locked}
+                />
+              </Box>
+
+              <Box flex="1">
+                <Text fontSize="xs" opacity={0.7} mb={1}>
+                  Score B
+                </Text>
+                <Input
+                  inputMode="numeric"
+                  value={row.scoreB}
+                  onChange={(e) => setScore(m.id, "scoreB", e.target.value)}
+                  disabled={!tid || locked}
+                />
+              </Box>
+            </HStack>
+
+            {/* Winner + errors */}
+            <Box mt={3}>
+              <HStack justify="space-between" align="center" wrap="wrap">
+                <Text fontWeight="700">
+                  Winner: <Box as="span" fontWeight="600">{winnerText(m)}</Box>
+                </Text>
+
+                {forfeited ? (
+                  <HStack gap={1.5} opacity={0.85}>
+                    <Flag size={14} />
+                    <Text fontSize="xs">Forfeit</Text>
+                  </HStack>
+                ) : null}
+              </HStack>
+
+              {row.error ? (
+                <Text mt={1} fontSize="sm" color="red.600">
+                  {row.error}
+                </Text>
+              ) : null}
+            </Box>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
 
 export default function MatchSchedule() {
   usePageTitle("Matches");
@@ -197,6 +392,7 @@ export default function MatchSchedule() {
 
   const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament
   const [state, setState] = useState(null);
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   // teams that include players so we can show (HADD, HADD)
   const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);

@@ -19,6 +19,7 @@ import {
   Select,
   Card,
   createListCollection,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import {
   Plus,
@@ -58,6 +59,105 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+function PlayersCardList({ players, onDelete }) {
+  return (
+    <Stack gap={3}>
+      {players.map((p) => {
+        const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
+        const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+
+        return (
+          <Box
+            key={p.id ?? p.email ?? p.name}
+            border="1px solid"
+            borderColor="border"
+            borderRadius="2xl"
+            p={4}
+            bg={p._optimistic ? "green.50" : "white"}
+          >
+            <HStack justify="space-between" align="start" gap={3}>
+              <Box>
+                <Text fontWeight="800">
+                  {p.name ?? "Unnamed"}
+                  {p._optimistic ? (
+                    <Badge ml={2} variant="pickle">
+                      Just joined
+                    </Badge>
+                  ) : null}
+                </Text>
+
+                <HStack mt={2} gap={2} wrap="wrap">
+                  <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
+                  <Badge variant="club">{tier}</Badge>
+                </HStack>
+              </Box>
+
+              {!p._optimistic ? (
+                <IconButton
+                  aria-label="Delete player"
+                  variant="outline"
+                  onClick={() => onDelete(p.id)}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              ) : null}
+            </HStack>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function TeamsCardList({ teams, onRename, onDelete, deletingTeamId, tid }) {
+  return (
+    <Stack gap={3}>
+      {teams.map((t) => (
+        <Box
+          key={t.id}
+          border="1px solid"
+          borderColor="border"
+          borderRadius="2xl"
+          p={4}
+          bg="white"
+        >
+          <HStack justify="space-between" align="start" gap={3}>
+            <Box>
+              <Text fontWeight="800">{t.name}</Text>
+              <Text mt={2} fontWeight="600" opacity={0.9}>
+                {(t.players ?? [])
+                  .map((p) => p.name)
+                  .filter(Boolean)
+                  .join(" / ") || "—"}
+              </Text>
+            </Box>
+
+            <HStack gap={2} wrap="wrap" justify="flex-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onRename(t)}
+                disabled={!tid}
+              >
+                Rename
+              </Button>
+
+              <IconButton
+                aria-label="Delete team"
+                variant="outline"
+                onClick={() => onDelete(t.id)}
+                disabled={!tid || deletingTeamId === t.id}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            </HStack>
+          </HStack>
+        </Box>
+      ))}
+    </Stack>
+  );
+}
+
 export default function PlayersPage() {
   usePageTitle("Players");
 
@@ -75,6 +175,7 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ok | error
   const [query, setQuery] = useState("");
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   // Create player modal
   const [openPlayer, setOpenPlayer] = useState(false);
@@ -507,7 +608,7 @@ export default function PlayersPage() {
         </Stack>
       </StickyPageHeader>
 
-      <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
+      <Container maxW="6xl" pt={{ base: 8, md: 10 }} px={{ base: 4, md: 6 }}>
         <Stack gap={6}>
           {/* Actions row (search + buttons) */}
           <Flex
@@ -568,13 +669,13 @@ export default function PlayersPage() {
             boxShadow="soft"
             overflow="hidden"
           >
-            <Box p={{ base: 4, md: 5 }}>
+            <Box p={{ base: 3, md: 5 }}>
               {filteredPlayers.length === 0 ? (
                 <Box
                   border="1px dashed"
                   borderColor="border"
                   borderRadius="2xl"
-                  p={{ base: 6, md: 10 }}
+                  p={{ base: 5, md: 10 }}
                   textAlign="center"
                   bg="cream.50"
                 >
@@ -589,11 +690,16 @@ export default function PlayersPage() {
                   <Button
                     variant="pickle"
                     onClick={() => setOpenPlayer(true)}
-                    disabled={!tid}
+                    isDisabled={!tid}
                   >
                     Add Player
                   </Button>
                 </Box>
+              ) : isMobile ? (
+                <PlayersCardList
+                  players={filteredPlayers}
+                  onDelete={deletePlayer}
+                />
               ) : (
                 <Box overflowX="auto">
                   <Table.Root size="md" variant="outline">
@@ -615,17 +721,9 @@ export default function PlayersPage() {
                         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
 
                         return (
-                          <Table.Row
-                            key={p.id ?? p.email ?? p.name}
-                            bg={p._optimistic ? "green.50" : undefined}
-                          >
+                          <Table.Row key={p.id ?? p.email ?? p.name}>
                             <Table.Cell fontWeight="600">
                               {p.name ?? "Unnamed"}
-                              {p._optimistic ? (
-                                <Badge ml={2} variant="pickle">
-                                  Just joined
-                                </Badge>
-                              ) : null}
                             </Table.Cell>
 
                             <Table.Cell>
@@ -780,6 +878,14 @@ export default function PlayersPage() {
                       Create Team
                     </Button>
                   </Box>
+                ) : isMobile ? (
+                  <TeamsCardList
+                    teams={teams}
+                    onRename={openRenameModal}
+                    onDelete={deleteTeam}
+                    deletingTeamId={deletingTeamId}
+                    tid={tid}
+                  />
                 ) : (
                   <Table.Root size="md" variant="outline">
                     <Table.Header>
@@ -812,7 +918,7 @@ export default function PlayersPage() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => openRenameModal(t)}
-                                disabled={!tid}
+                                isDisabled={!tid}
                               >
                                 Rename
                               </Button>
@@ -821,7 +927,7 @@ export default function PlayersPage() {
                                 aria-label="Delete team"
                                 variant="outline"
                                 onClick={() => deleteTeam(t.id)}
-                                disabled={!tid || deletingTeamId === t.id}
+                                isDisabled={!tid || deletingTeamId === t.id}
                               >
                                 <Trash2 size={16} />
                               </IconButton>

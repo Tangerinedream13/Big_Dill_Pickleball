@@ -153,7 +153,7 @@ export default function BracketPage() {
     tournamentId: "",
   });
   const [error, setError] = useState("");
-  const isMobile = useBreakpointValue({ base: true, md: false });
+  const isMobile = useBreakpointValue({ base: true, md: false }) ?? true;
 
   function withTid(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
@@ -262,15 +262,15 @@ export default function BracketPage() {
   }, [state.finals]);
 
   return (
-    <Container maxW="6xl" py={8}>
+    <Container maxW="6xl" py={8} px={{ base: 4, md: 6 }} overflowX="hidden">
       {/* Print styles */}
       <style>{`
-        .print-sheet { background: white; }
+        .print-sheet { background: white; max-width: 100%; }
         .print-only { display: none; }
-
+  
         @media print {
           @page { margin: 0.5in; }
-
+  
           .no-print { display: none !important; }
           body { background: white !important; }
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -278,11 +278,11 @@ export default function BracketPage() {
           .print-only { display: block !important; }
           .page-break { break-before: page; page-break-before: always; }
           .avoid-break { break-inside: avoid; page-break-inside: avoid; }
-
+  
           table { table-layout: fixed; width: 100%; }
           th, td { font-size: 10px !important; padding: 6px !important; vertical-align: top; }
         }
-
+  
         .sheet-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; }
         .sheet-sub { font-size: 12px; opacity: 0.9; margin-bottom: 12px; }
         .section-title { font-size: 14px; font-weight: 800; margin: 14px 0 8px; }
@@ -290,53 +290,74 @@ export default function BracketPage() {
         .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
         .line { height: 1px; background: #222; opacity: 0.6; margin: 10px 0; }
-
+  
         .match-box { border: 1px solid #222; border-radius: 10px; padding: 10px; }
         .match-row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; }
         .score-box { border: 1px solid #222; height: 22px; border-radius: 6px; }
         .note-box { border: 1px solid #222; height: 28px; border-radius: 6px; }
+  
+        /* Mobile safety: stack grids to prevent horizontal overflow */
+        @media (max-width: 600px) {
+          .grid2 { grid-template-columns: 1fr; }
+          .grid3 { grid-template-columns: 1fr; }
+        }
+  
+        /* Make wide tables scroll instead of spilling */
+        .table-scroll {
+          display: block;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          width: 100%;
+        }
+  
+        /* Optional: give tables a minimum width so scrolling actually engages */
+        .table-min {
+          min-width: 760px;
+        }
       `}</style>
-
-      {/* Header / controls (won't print) */}
-      <HStack mb={6} className="no-print">
+      S{/* Header / controls (won't print) */}
+      <HStack mb={6} className="no-print" flexWrap="wrap" gap={3} align="start">
         <IconButton
           aria-label="Home"
           variant="outline"
           onClick={() => navigate("/")}
+          flexShrink={0}
         >
           <Home size={18} />
         </IconButton>
 
-        <Heading size={{ base: "md", md: "lg" }}>Tournament Brackets</Heading>
+        <Heading size={{ base: "md", md: "lg" }} flex="1" minW={0}>
+          Tournament Brackets
+        </Heading>
 
-        <Spacer />
-
-        <HStack>
-          <Button variant="outline" onClick={fetchState}>
+        <HStack
+          flexWrap="wrap"
+          justify={{ base: "flex-start", md: "flex-end" }}
+          w={{ base: "100%", md: "auto" }}
+          gap={2}
+        >
+          <Button size="sm" variant="outline" onClick={fetchState}>
             <RotateCcw size={16} style={{ marginRight: 8 }} />
             Refresh
           </Button>
 
-          <Button variant="outline" onClick={() => window.print()}>
+          <Button size="sm" variant="outline" onClick={() => window.print()}>
             <Printer size={16} style={{ marginRight: 8 }} />
             Print
           </Button>
 
-          <Button variant="outline" onClick={() => navigate("/")}>
+          <Button size="sm" variant="outline" onClick={() => navigate("/")}>
             <ArrowLeft size={16} style={{ marginRight: 8 }} />
             Back
           </Button>
         </HStack>
       </HStack>
-
       {error && (
         <Box mb={4} p={3} borderWidth="1px" rounded="md">
           <Text>{error}</Text>
         </Box>
       )}
-
       {loading && teams.length === 0 ? <Text>Loading…</Text> : null}
-
       {/* On-screen bracket (mobile-friendly) */}
       {isMobile ? (
         <Stack gap={4}>
@@ -545,10 +566,13 @@ export default function BracketPage() {
           </div>
 
           {/* Round Robin Schedule */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Round Robin Schedule</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
@@ -581,10 +605,13 @@ export default function BracketPage() {
           </div>
 
           {/* Round Robin Results */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Round Robin Results</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
@@ -653,10 +680,13 @@ export default function BracketPage() {
           </div>
 
           {/* Standings */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Standings</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="60px">Seed</Table.ColumnHeader>

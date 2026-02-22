@@ -21,6 +21,7 @@ import {
   Table,
   Tabs,
   createListCollection,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import {
   Home,
@@ -187,6 +188,207 @@ function MatchesMiniList({ matches, teamDisplay }) {
     </Table.Root>
   );
 }
+function MatchesCardList({
+  matches,
+  edits,
+  editMode,
+  tid,
+  tournamentComplete,
+  finalsConfirmed,
+  labelForPhase,
+  displayTeamForMatch,
+  winnerText,
+  isForfeitRR,
+  hasAnyScoreOrForfeit,
+  setScore,
+  beginEdit,
+  cancelEdit,
+  saveMatch,
+  openScratch,
+}) {
+  return (
+    <Stack gap={3}>
+      {matches.map((m) => {
+        const phaseMeta = labelForPhase(m.phase);
+        const aName = displayTeamForMatch(m, m.teamAId);
+        const bName = displayTeamForMatch(m, m.teamBId);
+
+        const row = edits[m.id] ?? {
+          scoreA: "",
+          scoreB: "",
+          saving: false,
+          error: null,
+        };
+
+        const forfeited = isForfeitRR(m);
+        const isEditingThis = !!editMode[m.id];
+
+        const isFinalsMatch = m.phase === "FINAL" || m.phase === "THIRD";
+        const lockedByFinals = finalsConfirmed && !isFinalsMatch;
+
+        const locked =
+          tournamentComplete ||
+          lockedByFinals ||
+          (!!m.winnerId && !isEditingThis);
+
+        const showEdit =
+          !tournamentComplete &&
+          !lockedByFinals &&
+          !!m.winnerId &&
+          hasAnyScoreOrForfeit(m) &&
+          !isEditingThis;
+
+        const showScratch =
+          m.phase === "RR" && !tournamentComplete && !finalsConfirmed;
+
+        const hasTypedSomething =
+          (row.scoreA ?? "") !== "" || (row.scoreB ?? "") !== "";
+
+        const showSave =
+          !tournamentComplete &&
+          !locked &&
+          (isEditingThis || hasTypedSomething);
+
+        const showCancel = isEditingThis;
+
+        return (
+          <Box
+            key={`${m.phase}-${m.id}`}
+            border="1px solid"
+            borderColor="border"
+            borderRadius="2xl"
+            p={{ base: 3, md: 4 }}
+            bg={forfeited ? "gray.50" : "white"}
+          >
+            {/* Header row */}
+            <HStack justify="space-between" align="start" gap={3} wrap="wrap">
+              <HStack gap={2} wrap="wrap">
+                <Badge variant={phaseMeta.variant}>{phaseMeta.label}</Badge>
+                <Text fontWeight="800">{m.id}</Text>
+              </HStack>
+
+              {/* Actions */}
+              <HStack gap={1}>
+                {showEdit ? (
+                  <IconButton
+                    aria-label="Edit score"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => beginEdit(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <RotateCcw size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showCancel ? (
+                  <IconButton
+                    aria-label="Cancel edit"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => cancelEdit(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <X size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showSave ? (
+                  <IconButton
+                    aria-label="Save score"
+                    variant="outline"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => saveMatch(m)}
+                    disabled={!tid || row.saving}
+                  >
+                    <Save size={16} />
+                  </IconButton>
+                ) : null}
+
+                {showScratch ? (
+                  <IconButton
+                    aria-label="Scratch match"
+                    title="Forfeit (clears score)"
+                    variant="ghost"
+                    size="sm"
+                    borderRadius="full"
+                    onClick={() => openScratch(m)}
+                    disabled={!tid}
+                  >
+                    <Flag size={16} />
+                  </IconButton>
+                ) : null}
+              </HStack>
+            </HStack>
+
+            {/* Teams */}
+            <Box mt={2}>
+              <Text fontWeight="700">{aName}</Text>
+              <Text opacity={0.75} fontSize="sm">
+                vs {bName}
+              </Text>
+            </Box>
+
+            {/* Score inputs */}
+            <HStack mt={3} gap={2} align="center">
+              <Box flex="1">
+                <Text fontSize="xs" opacity={0.7} mb={1}>
+                  Score A
+                </Text>
+                <Input
+                  inputMode="numeric"
+                  value={row.scoreA}
+                  onChange={(e) => setScore(m.id, "scoreA", e.target.value)}
+                  disabled={!tid || locked}
+                />
+              </Box>
+
+              <Box flex="1">
+                <Text fontSize="xs" opacity={0.7} mb={1}>
+                  Score B
+                </Text>
+                <Input
+                  inputMode="numeric"
+                  value={row.scoreB}
+                  onChange={(e) => setScore(m.id, "scoreB", e.target.value)}
+                  disabled={!tid || locked}
+                />
+              </Box>
+            </HStack>
+
+            {/* Winner + errors */}
+            <Box mt={3}>
+              <HStack justify="space-between" align="center" wrap="wrap">
+                <Text fontWeight="700">
+                  Winner:{" "}
+                  <Box as="span" fontWeight="600">
+                    {winnerText(m)}
+                  </Box>
+                </Text>
+
+                {forfeited ? (
+                  <HStack gap={1.5} opacity={0.85}>
+                    <Flag size={14} />
+                    <Text fontSize="xs">Forfeit</Text>
+                  </HStack>
+                ) : null}
+              </HStack>
+
+              {row.error ? (
+                <Text mt={1} fontSize="sm" color="red.600">
+                  {row.error}
+                </Text>
+              ) : null}
+            </Box>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
 
 export default function MatchSchedule() {
   usePageTitle("Matches");
@@ -197,6 +399,7 @@ export default function MatchSchedule() {
 
   const [status, setStatus] = useState("loading"); // loading | ok | error | no-tournament
   const [state, setState] = useState(null);
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   // teams that include players so we can show (HADD, HADD)
   const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);
@@ -1067,7 +1270,7 @@ export default function MatchSchedule() {
         </Stack>
       </StickyPageHeader>
 
-      <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
+      <Container maxW="6xl" pt={{ base: 6, md: 10 }} px={{ base: 4, md: 6 }}>
         <Stack gap={6}>
           {advanceSemisError ? (
             <Box
@@ -1350,207 +1553,230 @@ export default function MatchSchedule() {
                     Refresh
                   </Button>
                 </Box>
+              ) : isMobile ? (
+                <MatchesCardList
+                  matches={filtered}
+                  edits={edits}
+                  editMode={editMode}
+                  tid={tid}
+                  tournamentComplete={tournamentComplete}
+                  finalsConfirmed={finalsConfirmed}
+                  labelForPhase={labelForPhase}
+                  displayTeamForMatch={displayTeamForMatch}
+                  winnerText={winnerText}
+                  isForfeitRR={isForfeitRR}
+                  hasAnyScoreOrForfeit={hasAnyScoreOrForfeit}
+                  setScore={setScore}
+                  beginEdit={beginEdit}
+                  cancelEdit={cancelEdit}
+                  saveMatch={saveMatch}
+                  openScratch={openScratch}
+                />
               ) : (
-                <Table.Root size="md" variant="outline">
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.ColumnHeader>Phase</Table.ColumnHeader>
-                      <Table.ColumnHeader>Match</Table.ColumnHeader>
-                      <Table.ColumnHeader>Teams</Table.ColumnHeader>
-                      <Table.ColumnHeader>Score A</Table.ColumnHeader>
-                      <Table.ColumnHeader>Score B</Table.ColumnHeader>
-                      <Table.ColumnHeader>Winner</Table.ColumnHeader>
-                      <Table.ColumnHeader textAlign="end">
-                        Actions
-                      </Table.ColumnHeader>
-                    </Table.Row>
-                  </Table.Header>
+                <Box overflowX="auto">
+                  <Table.Root size="md" variant="outline">
+                    <Table.Header>
+                      <Table.Row>
+                        <Table.ColumnHeader>Phase</Table.ColumnHeader>
+                        <Table.ColumnHeader>Match</Table.ColumnHeader>
+                        <Table.ColumnHeader>Teams</Table.ColumnHeader>
+                        <Table.ColumnHeader>Score A</Table.ColumnHeader>
+                        <Table.ColumnHeader>Score B</Table.ColumnHeader>
+                        <Table.ColumnHeader>Winner</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">
+                          Actions
+                        </Table.ColumnHeader>
+                      </Table.Row>
+                    </Table.Header>
 
-                  <Table.Body>
-                    {filtered.map((m) => {
-                      const phaseMeta = labelForPhase(m.phase);
-                      const aName = displayTeamForMatch(m, m.teamAId);
-                      const bName = displayTeamForMatch(m, m.teamBId);
+                    <Table.Body>
+                      {filtered.map((m) => {
+                        const phaseMeta = labelForPhase(m.phase);
+                        const aName = displayTeamForMatch(m, m.teamAId);
+                        const bName = displayTeamForMatch(m, m.teamBId);
 
-                      const row = edits[m.id] ?? {
-                        scoreA: "",
-                        scoreB: "",
-                        saving: false,
-                        error: null,
-                      };
+                        const row = edits[m.id] ?? {
+                          scoreA: "",
+                          scoreB: "",
+                          saving: false,
+                          error: null,
+                        };
 
-                      const forfeited = isForfeitRR(m);
-                      const isEditingThis = !!editMode[m.id];
+                        const forfeited = isForfeitRR(m);
+                        const isEditingThis = !!editMode[m.id];
 
-                      const isFinalsMatch =
-                        m.phase === "FINAL" || m.phase === "THIRD";
-                      const lockedByFinals = finalsConfirmed && !isFinalsMatch;
+                        const isFinalsMatch =
+                          m.phase === "FINAL" || m.phase === "THIRD";
+                        const lockedByFinals =
+                          finalsConfirmed && !isFinalsMatch;
 
-                      // Lock completed matches unless user entered edit mode
-                      const locked =
-                        tournamentComplete ||
-                        lockedByFinals ||
-                        (!!m.winnerId && !isEditingThis);
+                        // Lock completed matches unless user entered edit mode
+                        const locked =
+                          tournamentComplete ||
+                          lockedByFinals ||
+                          (!!m.winnerId && !isEditingThis);
 
-                      // "Only show buttons when a score exists" => applies mainly to EDIT.
-                      const showEdit =
-                        !tournamentComplete &&
-                        !lockedByFinals &&
-                        !!m.winnerId &&
-                        hasAnyScoreOrForfeit(m) &&
-                        !isEditingThis;
+                        // "Only show buttons when a score exists" => applies mainly to EDIT.
+                        const showEdit =
+                          !tournamentComplete &&
+                          !lockedByFinals &&
+                          !!m.winnerId &&
+                          hasAnyScoreOrForfeit(m) &&
+                          !isEditingThis;
 
-                      // Scratch only RR + incomplete, and not locked by finals
-                      const showScratch =
-                        m.phase === "RR" &&
-                        !tournamentComplete &&
-                        !finalsConfirmed;
+                        // Scratch only RR + incomplete, and not locked by finals
+                        const showScratch =
+                          m.phase === "RR" &&
+                          !tournamentComplete &&
+                          !finalsConfirmed;
 
-                      // Save only when editing OR user has typed something in
-                      const hasTypedSomething =
-                        (row.scoreA ?? "") !== "" || (row.scoreB ?? "") !== "";
-                      const showSave =
-                        !tournamentComplete &&
-                        !locked &&
-                        (isEditingThis || hasTypedSomething);
+                        // Save only when editing OR user has typed something in
+                        const hasTypedSomething =
+                          (row.scoreA ?? "") !== "" ||
+                          (row.scoreB ?? "") !== "";
+                        const showSave =
+                          !tournamentComplete &&
+                          !locked &&
+                          (isEditingThis || hasTypedSomething);
 
-                      const showCancel = isEditingThis;
+                        const showCancel = isEditingThis;
 
-                      const showAnyActions =
-                        showEdit || showScratch || showSave || showCancel;
+                        const showAnyActions =
+                          showEdit || showScratch || showSave || showCancel;
 
-                      return (
-                        <Table.Row
-                          key={`${m.phase}-${m.id}`}
-                          role="group"
-                          bg={forfeited ? "gray.50" : undefined}
-                        >
-                          <Table.Cell>
-                            <Badge variant={phaseMeta.variant}>
-                              {phaseMeta.label}
-                            </Badge>
-                          </Table.Cell>
+                        return (
+                          <Table.Row
+                            key={`${m.phase}-${m.id}`}
+                            role="group"
+                            bg={forfeited ? "gray.50" : undefined}
+                          >
+                            <Table.Cell>
+                              <Badge variant={phaseMeta.variant}>
+                                {phaseMeta.label}
+                              </Badge>
+                            </Table.Cell>
 
-                          <Table.Cell fontWeight="700">{m.id}</Table.Cell>
+                            <Table.Cell fontWeight="700">{m.id}</Table.Cell>
 
-                          <Table.Cell>
-                            <Text fontWeight="600">{aName}</Text>
-                            <Text opacity={0.7} fontSize="sm">
-                              vs {bName}
-                            </Text>
-                          </Table.Cell>
-
-                          <Table.Cell>
-                            <Input
-                              w="88px"
-                              inputMode="numeric"
-                              value={row.scoreA}
-                              onChange={(e) =>
-                                setScore(m.id, "scoreA", e.target.value)
-                              }
-                              disabled={!tid || locked}
-                            />
-                          </Table.Cell>
-
-                          <Table.Cell>
-                            <Input
-                              w="88px"
-                              inputMode="numeric"
-                              value={row.scoreB}
-                              onChange={(e) =>
-                                setScore(m.id, "scoreB", e.target.value)
-                              }
-                              disabled={!tid || locked}
-                            />
-                          </Table.Cell>
-
-                          <Table.Cell>
-                            <Text fontWeight="600">{winnerText(m)}</Text>
-
-                            {forfeited ? (
-                              <HStack mt={1} gap={1.5} opacity={0.85}>
-                                <Flag size={14} />
-                                <Text fontSize="xs">Forfeit</Text>
-                              </HStack>
-                            ) : null}
-
-                            {row.error ? (
-                              <Text fontSize="xs" color="red.600">
-                                {row.error}
+                            <Table.Cell>
+                              <Text fontWeight="600">{aName}</Text>
+                              <Text opacity={0.7} fontSize="sm">
+                                vs {bName}
                               </Text>
-                            ) : null}
-                          </Table.Cell>
+                            </Table.Cell>
 
-                          {/* Actions: icon-only, fade in on hover */}
-                          <Table.Cell textAlign="end">
-                            {showAnyActions ? (
-                              <HStack justify="flex-end" gap={1}>
-                                {showEdit ? (
-                                  <IconButton
-                                    aria-label="Edit score"
-                                    variant="outline"
-                                    size="sm"
-                                    borderRadius="full"
-                                    onClick={() => beginEdit(m)}
-                                    disabled={!tid || row.saving}
-                                    _hover={{ bg: "cream.100" }}
-                                  >
-                                    <RotateCcw size={16} />
-                                  </IconButton>
-                                ) : null}
+                            <Table.Cell>
+                              <Input
+                                w="88px"
+                                inputMode="numeric"
+                                value={row.scoreA}
+                                onChange={(e) =>
+                                  setScore(m.id, "scoreA", e.target.value)
+                                }
+                                disabled={!tid || locked}
+                              />
+                            </Table.Cell>
 
-                                {showCancel ? (
-                                  <IconButton
-                                    aria-label="Cancel edit"
-                                    variant="outline"
-                                    size="sm"
-                                    borderRadius="full"
-                                    onClick={() => cancelEdit(m)}
-                                    disabled={!tid || row.saving}
-                                    _hover={{ bg: "gray.100" }}
-                                  >
-                                    <X size={16} />
-                                  </IconButton>
-                                ) : null}
+                            <Table.Cell>
+                              <Input
+                                w="88px"
+                                inputMode="numeric"
+                                value={row.scoreB}
+                                onChange={(e) =>
+                                  setScore(m.id, "scoreB", e.target.value)
+                                }
+                                disabled={!tid || locked}
+                              />
+                            </Table.Cell>
 
-                                {showSave ? (
-                                  <IconButton
-                                    aria-label="Save score"
-                                    variant="outline"
-                                    size="sm"
-                                    borderRadius="full"
-                                    onClick={() => saveMatch(m)}
-                                    disabled={!tid || row.saving}
-                                    _hover={{ bg: "green.50" }}
-                                  >
-                                    <Save size={16} />
-                                  </IconButton>
-                                ) : null}
+                            <Table.Cell>
+                              <Text fontWeight="600">{winnerText(m)}</Text>
 
-                                {showScratch ? (
-                                  <IconButton
-                                    aria-label="Scratch match"
-                                    title="Forfeit (clears score)"
-                                    variant="ghost"
-                                    size="sm"
-                                    borderRadius="full"
-                                    onClick={() => openScratch(m)}
-                                    disabled={!tid}
-                                    _hover={{ bg: "orange.50" }}
-                                  >
-                                    <Flag size={16} />
-                                  </IconButton>
-                                ) : null}
-                              </HStack>
-                            ) : (
-                              <Text opacity={0.5}>—</Text>
-                            )}
-                          </Table.Cell>
-                        </Table.Row>
-                      );
-                    })}
-                  </Table.Body>
-                </Table.Root>
+                              {forfeited ? (
+                                <HStack mt={1} gap={1.5} opacity={0.85}>
+                                  <Flag size={14} />
+                                  <Text fontSize="xs">Forfeit</Text>
+                                </HStack>
+                              ) : null}
+
+                              {row.error ? (
+                                <Text fontSize="xs" color="red.600">
+                                  {row.error}
+                                </Text>
+                              ) : null}
+                            </Table.Cell>
+
+                            {/* Actions: icon-only, fade in on hover */}
+                            <Table.Cell textAlign="end">
+                              {showAnyActions ? (
+                                <HStack justify="flex-end" gap={1}>
+                                  {showEdit ? (
+                                    <IconButton
+                                      aria-label="Edit score"
+                                      variant="outline"
+                                      size="sm"
+                                      borderRadius="full"
+                                      onClick={() => beginEdit(m)}
+                                      disabled={!tid || row.saving}
+                                      _hover={{ bg: "cream.100" }}
+                                    >
+                                      <RotateCcw size={16} />
+                                    </IconButton>
+                                  ) : null}
+
+                                  {showCancel ? (
+                                    <IconButton
+                                      aria-label="Cancel edit"
+                                      variant="outline"
+                                      size="sm"
+                                      borderRadius="full"
+                                      onClick={() => cancelEdit(m)}
+                                      disabled={!tid || row.saving}
+                                      _hover={{ bg: "gray.100" }}
+                                    >
+                                      <X size={16} />
+                                    </IconButton>
+                                  ) : null}
+
+                                  {showSave ? (
+                                    <IconButton
+                                      aria-label="Save score"
+                                      variant="outline"
+                                      size="sm"
+                                      borderRadius="full"
+                                      onClick={() => saveMatch(m)}
+                                      disabled={!tid || row.saving}
+                                      _hover={{ bg: "green.50" }}
+                                    >
+                                      <Save size={16} />
+                                    </IconButton>
+                                  ) : null}
+
+                                  {showScratch ? (
+                                    <IconButton
+                                      aria-label="Scratch match"
+                                      title="Forfeit (clears score)"
+                                      variant="ghost"
+                                      size="sm"
+                                      borderRadius="full"
+                                      onClick={() => openScratch(m)}
+                                      disabled={!tid}
+                                      _hover={{ bg: "orange.50" }}
+                                    >
+                                      <Flag size={16} />
+                                    </IconButton>
+                                  ) : null}
+                                </HStack>
+                              ) : (
+                                <Text opacity={0.5}>—</Text>
+                              )}
+                            </Table.Cell>
+                          </Table.Row>
+                        );
+                      })}
+                    </Table.Body>
+                  </Table.Root>
+                </Box>
               )}
             </Card.Body>
           </Card.Root>

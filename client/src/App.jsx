@@ -197,7 +197,6 @@ export default function App() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error);
 
-      // OPTIMISTIC PLAYER WRITE (shared store)
       setOptimisticPlayer({
         id: "optimistic",
         tournamentId: selectedTid,
@@ -259,25 +258,23 @@ export default function App() {
                 gap={{ base: 4, md: 4 }}
                 order={{ base: 1, md: 0 }}
               >
-                <HStack gap={3} align="center" flexWrap="wrap">
-                  {/* Mobile-only small icon next to title */}
+                <HStack gap={3} align="center" flexWrap="nowrap">
+                  <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
+                    Big Dill Pickleball
+                  </Heading>
+
+                  {/* Mobile-only smaller version of the SAME hero image */}
                   <Box
                     display={{ base: "block", md: "none" }}
                     as="img"
                     src={heroImg}
                     alt="Pickleball"
-                    h="44px"
-                    w="44px"
-                    objectFit="cover"
-                    borderRadius="xl"
+                    h="42px"
+                    w="auto"
+                    objectFit="contain"
                     flexShrink={0}
                   />
 
-                  <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
-                    Big Dill Pickleball
-                  </Heading>
-
-                  {/* divider hidden on small screens to reduce clutter */}
                   <Box
                     display={{ base: "none", sm: "block" }}
                     w="1px"

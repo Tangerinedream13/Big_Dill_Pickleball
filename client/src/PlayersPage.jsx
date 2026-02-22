@@ -302,6 +302,18 @@ export default function PlayersPage() {
     });
   }, [players, query]);
 
+  const playerTeamMap = useMemo(() => {
+    const m = new Map();
+    for (const t of teams ?? []) {
+      const teamName = t?.name ?? "";
+      for (const pl of t.players ?? []) {
+        if (pl?.id == null) continue;
+        m.set(String(pl.id), teamName);
+      }
+    }
+    return m;
+  }, [teams]);
+
   const assignedPlayerIds = useMemo(() => {
     const s = new Set();
     for (const t of teams ?? []) {
@@ -708,6 +720,7 @@ export default function PlayersPage() {
                         <Table.ColumnHeader>Name</Table.ColumnHeader>
                         <Table.ColumnHeader>DUPR</Table.ColumnHeader>
                         <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                        <Table.ColumnHeader>Team</Table.ColumnHeader>
                         <Table.ColumnHeader textAlign="end">
                           Actions
                         </Table.ColumnHeader>
@@ -719,11 +732,20 @@ export default function PlayersPage() {
                         const duprVal =
                           p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
                         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+                        const teamName = playerTeamMap.get(String(p.id)) ?? "";
 
                         return (
                           <Table.Row key={p.id ?? p.email ?? p.name}>
                             <Table.Cell fontWeight="600">
                               {p.name ?? "Unnamed"}
+                            </Table.Cell>
+
+                            <Table.Cell>
+                              {teamName ? (
+                                <Badge variant="pickle">{teamName}</Badge>
+                              ) : (
+                                <Text opacity={0.6}>—</Text> 
+                              )}
                             </Table.Cell>
 
                             <Table.Cell>

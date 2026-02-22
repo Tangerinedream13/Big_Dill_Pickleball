@@ -20,7 +20,6 @@ import {
   Trophy,
   Users,
   CalendarDays,
-  Plus,
   LogIn,
   ChevronDown,
   Settings,
@@ -56,11 +55,11 @@ function Surface({ children, ...props }) {
 
 function ActionTile({ icon, title, desc, cta, onClick, disabled = false }) {
   return (
-    <Surface p={5} opacity={disabled ? 0.6 : 1}>
+    <Surface p={4} opacity={disabled ? 0.6 : 1}>
       <HStack gap={3} mb={2}>
         <Box
-          w="36px"
-          h="36px"
+          w={{ base: "32px", md: "36px" }}
+          h={{ base: "32px", md: "36px" }}
           borderRadius="xl"
           bg="club.100"
           display="grid"
@@ -227,18 +226,55 @@ export default function App() {
       ?.label || "";
 
   return (
-    <Box minH="100vh" py={{ base: 10, md: 14 }} bg="cream.50">
-      <Container maxW="6xl">
-        <Stack gap={10}>
-          <Surface p={8}>
-            <Flex gap={10} direction={{ base: "column", md: "row" }}>
-              <Stack flex="1" gap={4}>
+    <Box minH="100vh" py={{ base: 6, md: 14 }} bg="cream.50">
+      <Container maxW="6xl" px={{ base: 4, md: 6 }}>
+        <Stack gap={{ base: 6, md: 10 }}>
+          <Surface p={{ base: 4, md: 8 }}>
+            <Flex
+              gap={{ base: 6, md: 10 }}
+              direction={{ base: "column", md: "row" }}
+              align="stretch"
+            >
+              {/* Hero image first on mobile */}
+              <Box
+                flex="1"
+                order={{ base: 0, md: 1 }}
+                borderRadius="2xl"
+                overflow="hidden"
+              >
+                <Box
+                  as="img"
+                  src={heroImg}
+                  alt="Pickleball"
+                  w="100%"
+                  h={{ base: "180px", sm: "240px", md: "auto" }}
+                  objectFit={{ base: "cover", md: "contain" }}
+                  display="block"
+                />
+              </Box>
+
+              {/* Main content */}
+              <Stack
+                flex="1"
+                gap={{ base: 4, md: 4 }}
+                order={{ base: 1, md: 0 }}
+              >
                 <HStack gap={3} align="center" flexWrap="wrap">
-                  <Heading>Big Dill Pickleball</Heading>
-                  <Box w="1px" h="24px" bg="border" opacity={0.6} mx={2} />
+                  <Heading size={{ base: "lg", md: "xl" }}>
+                    Big Dill Pickleball
+                  </Heading>
+                  {/* divider hidden on small screens to reduce clutter */}
+                  <Box
+                    display={{ base: "none", sm: "block" }}
+                    w="1px"
+                    h="24px"
+                    bg="border"
+                    opacity={0.6}
+                    mx={2}
+                  />
                 </HStack>
 
-                <Surface p={4}>
+                <Surface p={{ base: 3, md: 4 }}>
                   <Stack gap={2}>
                     <HStack justify="space-between" align="center">
                       <Text fontWeight="800" color="club.900">
@@ -252,32 +288,35 @@ export default function App() {
                       </Text>
                     ) : null}
 
-                    <Select.Root
-                      collection={tournamentCollection}
-                      value={selectedTid ? [String(selectedTid)] : []}
-                      onValueChange={(d) => setTidEverywhere(d.value?.[0])}
-                      disabled={tournamentsStatus === "loading"}
-                    >
-                      <Select.Trigger>
-                        <Select.ValueText
-                          placeholder={
-                            tournamentsStatus === "loading"
-                              ? "Loading tournaments…"
-                              : "Select a tournament"
-                          }
-                        />
-                        <Select.Indicator>
-                          <ChevronDown size={16} />
-                        </Select.Indicator>
-                      </Select.Trigger>
-                      <Select.Content>
-                        {tournamentCollection.items.map((opt) => (
-                          <Select.Item key={opt.value} item={opt}>
-                            {opt.label}
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Root>
+                    {/* Ensure the select never overflows */}
+                    <Box w="full">
+                      <Select.Root
+                        collection={tournamentCollection}
+                        value={selectedTid ? [String(selectedTid)] : []}
+                        onValueChange={(d) => setTidEverywhere(d.value?.[0])}
+                        disabled={tournamentsStatus === "loading"}
+                      >
+                        <Select.Trigger style={{ width: "100%" }}>
+                          <Select.ValueText
+                            placeholder={
+                              tournamentsStatus === "loading"
+                                ? "Loading tournaments…"
+                                : "Select a tournament"
+                            }
+                          />
+                          <Select.Indicator>
+                            <ChevronDown size={16} />
+                          </Select.Indicator>
+                        </Select.Trigger>
+                        <Select.Content>
+                          {tournamentCollection.items.map((opt) => (
+                            <Select.Item key={opt.value} item={opt}>
+                              {opt.label}
+                            </Select.Item>
+                          ))}
+                        </Select.Content>
+                      </Select.Root>
+                    </Box>
 
                     {hasTournamentSelected ? (
                       <Text fontSize="sm" opacity={0.8}>
@@ -292,29 +331,33 @@ export default function App() {
                   </Stack>
                 </Surface>
 
+                {/* Buttons */}
                 <Stack direction="column" gap={3} align="stretch">
                   <Button
+                    w="full"
                     bg="club.900"
                     color="white"
+                    _hover={{ bg: "club.800" }}
                     onClick={() => setJoinOpen((v) => !v)}
                   >
-                    <LogIn size={18} />
+                    <LogIn size={18} style={{ marginRight: 8 }} />
                     {joinOpen ? "Close Join" : "Join Tournament"}
                   </Button>
 
                   <Button
+                    w="full"
                     bg="club.900"
                     color="white"
                     _hover={{ bg: "club.800" }}
                     onClick={() => navigate("/tournaments/new")}
                   >
-                    <Settings size={18} />
+                    <Settings size={18} style={{ marginRight: 8 }} />
                     Manage Tournament
                   </Button>
                 </Stack>
 
                 {joinOpen && (
-                  <Card.Root>
+                  <Card.Root width="100%">
                     <Card.Body>
                       <Stack as="form" onSubmit={submitJoin} gap={4}>
                         {joinError ? (
@@ -350,8 +393,13 @@ export default function App() {
                           disabled={isSubmitting}
                         />
 
-                        <HStack justify="flex-end">
+                        <HStack
+                          justify={{ base: "stretch", sm: "flex-end" }}
+                          gap={2}
+                          flexWrap="wrap"
+                        >
                           <Button
+                            flex={{ base: 1, sm: "unset" }}
                             variant="outline"
                             onClick={() => setJoinOpen(false)}
                             disabled={isSubmitting}
@@ -360,6 +408,7 @@ export default function App() {
                             Cancel
                           </Button>
                           <Button
+                            flex={{ base: 1, sm: "unset" }}
                             variant="pickle"
                             type="submit"
                             disabled={!canJoinSubmit}
@@ -372,18 +421,18 @@ export default function App() {
                   </Card.Root>
                 )}
               </Stack>
-
-              <Box flex="1">
-                <img
-                  src={heroImg}
-                  alt="Pickleball"
-                  style={{ borderRadius: 16, width: "100%" }}
-                />
-              </Box>
             </Flex>
           </Surface>
 
-          <Grid templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }} gap={5}>
+          {/* Action tiles grid already good; just tighten mobile spacing */}
+          <Grid
+            templateColumns={{
+              base: "1fr",
+              sm: "repeat(2, 1fr)",
+              md: "repeat(3, 1fr)",
+            }}
+            gap={{ base: 4, md: 5 }}
+          >
             <ActionTile
               icon={<Users size={18} />}
               title="Players"

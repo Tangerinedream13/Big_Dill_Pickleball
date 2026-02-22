@@ -19,6 +19,7 @@ import {
   Select,
   Card,
   createListCollection,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import {
   Plus,
@@ -58,6 +59,9 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+
+
+
 export default function PlayersPage() {
   usePageTitle("Players");
 
@@ -75,6 +79,7 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | ok | error
   const [query, setQuery] = useState("");
+  const isMobile = useBreakpointValue({ base: true, md: false });
 
   // Create player modal
   const [openPlayer, setOpenPlayer] = useState(false);

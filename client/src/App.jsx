@@ -234,10 +234,11 @@ export default function App() {
               direction={{ base: "column", md: "row" }}
               align="stretch"
             >
-              {/* Hero image first on mobile */}
+              {/* Hero image (DESKTOP ONLY) */}
               <Box
+                display={{ base: "none", md: "block" }}
                 flex="1"
-                order={{ base: 0, md: 1 }}
+                order={{ md: 1 }}
                 borderRadius="2xl"
                 overflow="hidden"
               >
@@ -246,8 +247,9 @@ export default function App() {
                   src={heroImg}
                   alt="Pickleball"
                   w="100%"
-                  h={{ base: "180px", sm: "240px", md: "auto" }}
-                  objectFit={{ base: "cover", md: "contain" }}
+                  h="100%"
+                  minH="260px"
+                  objectFit="contain"
                   display="block"
                 />
               </Box>

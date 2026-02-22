@@ -265,7 +265,7 @@ export default function BracketPage() {
     <Container maxW="6xl" py={8} px={{ base: 4, md: 6 }} overflowX="hidden">
       {/* Print styles */}
       <style>{`
-        .print-sheet { background: white; }
+        .print-sheet { background: white; max-width: 100%; }
         .print-only { display: none; }
   
         @media print {
@@ -307,9 +307,15 @@ export default function BracketPage() {
           display: block;
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
+          width: 100%;
+        }
+  
+        /* Optional: give tables a minimum width so scrolling actually engages */
+        .table-min {
+          min-width: 760px;
         }
       `}</style>
-      {/* Header / controls (won't print) */}
+      S{/* Header / controls (won't print) */}
       <HStack mb={6} className="no-print" flexWrap="wrap" gap={3} align="start">
         <IconButton
           aria-label="Home"
@@ -346,15 +352,12 @@ export default function BracketPage() {
           </Button>
         </HStack>
       </HStack>
-
       {error && (
         <Box mb={4} p={3} borderWidth="1px" rounded="md">
           <Text>{error}</Text>
         </Box>
       )}
-
       {loading && teams.length === 0 ? <Text>Loading…</Text> : null}
-
       {/* On-screen bracket (mobile-friendly) */}
       {isMobile ? (
         <Stack gap={4}>
@@ -563,10 +566,13 @@ export default function BracketPage() {
           </div>
 
           {/* Round Robin Schedule */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Round Robin Schedule</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
@@ -599,10 +605,13 @@ export default function BracketPage() {
           </div>
 
           {/* Round Robin Results */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Round Robin Results</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="80px">Match</Table.ColumnHeader>
@@ -671,10 +680,13 @@ export default function BracketPage() {
           </div>
 
           {/* Standings */}
-          <div className="box avoid-break" style={{ marginTop: 12 }}>
+          <div
+            className="box avoid-break table-scroll"
+            style={{ marginTop: 12 }}
+          >
             <div className="section-title">Standings</div>
 
-            <Table.Root size="sm">
+            <Table.Root size="sm" className="table-min">
               <Table.Header>
                 <Table.Row>
                   <Table.ColumnHeader w="60px">Seed</Table.ColumnHeader>

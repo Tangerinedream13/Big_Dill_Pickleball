@@ -82,6 +82,7 @@ function renderScoreOrBox(score) {
     </div>
   );
 }
+
 function ScorePill({ value }) {
   const s =
     value === null || value === undefined || value === "" ? "—" : String(value);
@@ -111,7 +112,7 @@ function MatchCard({ title, aLabel, bLabel, scoreA, scoreB, winnerLabel }) {
       p={4}
       bg="white"
     >
-      <HStack justify="space-between" mb={2} wrap="wrap">
+      <HStack justify="space-between" mb={2} flexWrap="wrap">
         <Heading size="sm">{title}</Heading>
         {winnerLabel ? (
           <Badge variant="pickle">Winner: {winnerLabel}</Badge>
@@ -119,15 +120,15 @@ function MatchCard({ title, aLabel, bLabel, scoreA, scoreB, winnerLabel }) {
       </HStack>
 
       <Stack gap={2}>
-        <HStack justify="space-between" align="center">
-          <Text fontWeight="700" noOfLines={1} maxW="75%">
+        <HStack justify="space-between" align="center" gap={3}>
+          <Text fontWeight="700" noOfLines={1} flex="1" minW={0}>
             {aLabel}
           </Text>
           <ScorePill value={scoreA} />
         </HStack>
 
-        <HStack justify="space-between" align="center">
-          <Text fontWeight="700" noOfLines={1} maxW="75%">
+        <HStack justify="space-between" align="center" gap={3}>
+          <Text fontWeight="700" noOfLines={1} flex="1" minW={0}>
             {bLabel}
           </Text>
           <ScorePill value={scoreB} />
@@ -244,9 +245,7 @@ export default function BracketPage() {
   }, [state.rrMatches]);
 
   useEffect(() => {
-    if (isMobile) {
-      setShowRR(rrForPrint.length <= 8);
-    }
+    if (isMobile) setShowRR(rrForPrint.length <= 8);
   }, [isMobile, rrForPrint.length]);
 
   // Tournament complete + winner (based on FINAL winnerId)
@@ -340,8 +339,6 @@ export default function BracketPage() {
 
       {loading && teams.length === 0 ? <Text>Loading…</Text> : null}
 
-      {/* PRINT SHEET */}
-
       {/* On-screen bracket (mobile-friendly) */}
       {isMobile ? (
         <Stack gap={4}>
@@ -414,6 +411,7 @@ export default function BracketPage() {
 
           <Divider />
 
+          {/* Mobile Round Robin (collapsible) */}
           <Box
             border="1px solid"
             borderColor="border"
@@ -421,7 +419,7 @@ export default function BracketPage() {
             p={4}
             bg="white"
           >
-            <HStack justify="space-between" mb={2}>
+            <HStack justify="space-between" mb={2} flexWrap="wrap">
               <Heading size="sm">Round Robin</Heading>
               <Button
                 size="sm"
@@ -446,7 +444,7 @@ export default function BracketPage() {
                     borderRadius="xl"
                     p={3}
                   >
-                    <HStack justify="space-between" mb={1} wrap="wrap">
+                    <HStack justify="space-between" mb={1} flexWrap="wrap">
                       <Text fontWeight="800">{m.id}</Text>
                       <Text fontSize="sm" opacity={0.75}>
                         {m.court ? `Court ${m.court}` : ""}
@@ -454,15 +452,15 @@ export default function BracketPage() {
                       </Text>
                     </HStack>
 
-                    <HStack justify="space-between">
-                      <Text fontWeight="700" noOfLines={1} maxW="75%">
+                    <HStack justify="space-between" gap={3}>
+                      <Text fontWeight="700" noOfLines={1} flex="1" minW={0}>
                         {teamLabelById(teams, m.teamAId)}
                       </Text>
                       <ScorePill value={m.scoreA} />
                     </HStack>
 
-                    <HStack justify="space-between" mt={2}>
-                      <Text fontWeight="700" noOfLines={1} maxW="75%">
+                    <HStack justify="space-between" gap={3} mt={2}>
+                      <Text fontWeight="700" noOfLines={1} flex="1" minW={0}>
                         {teamLabelById(teams, m.teamBId)}
                       </Text>
                       <ScorePill value={m.scoreB} />
@@ -472,56 +470,11 @@ export default function BracketPage() {
               </Stack>
             </Collapse>
           </Box>
-
-          {/* Show RR schedule as cards instead of a table */}
-          <Box
-            border="1px solid"
-            borderColor="border"
-            borderRadius="2xl"
-            p={4}
-            bg="white"
-          >
-            <Heading size="sm" mb={2}>
-              Round Robin
-            </Heading>
-            <Stack gap={2}>
-              {rrForPrint.map((m) => (
-                <Box
-                  key={m.id}
-                  border="1px solid"
-                  borderColor="border"
-                  borderRadius="xl"
-                  p={3}
-                >
-                  <HStack justify="space-between" mb={1}>
-                    <Text fontWeight="800">{m.id}</Text>
-                    <Text fontSize="sm" opacity={0.75}>
-                      {m.court ? `Court ${m.court}` : ""}{" "}
-                      {m.startTime ? `• ${fmtTime(m.startTime)}` : ""}
-                    </Text>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text fontWeight="700">
-                      {teamLabelById(teams, m.teamAId)}
-                    </Text>
-                    <ScorePill value={m.scoreA} />
-                  </HStack>
-                  <HStack justify="space-between" mt={2}>
-                    <Text fontWeight="700">
-                      {teamLabelById(teams, m.teamBId)}
-                    </Text>
-                    <ScorePill value={m.scoreB} />
-                  </HStack>
-                </Box>
-              ))}
-            </Stack>
-          </Box>
         </Stack>
       ) : (
+        // Desktop / print sheet
         <Box className="print-sheet">
-          <div className="sheet-title">
-            Big Dill Pickleball Tournament Sheet
-          </div>
+          <div className="sheet-title">Big Dill Pickleball Tournament Sheet</div>
           <div className="sheet-sub">
             Tournament ID: {state.tournamentId || tid || "—"} • Printed:{" "}
             {new Date().toLocaleString()}
@@ -556,9 +509,7 @@ export default function BracketPage() {
                 }}
               >
                 Tournament Complete ✅{" "}
-                {tournamentWinnerLabel
-                  ? ` Winner: ${tournamentWinnerLabel}`
-                  : ""}
+                {tournamentWinnerLabel ? ` Winner: ${tournamentWinnerLabel}` : ""}
               </div>
             ) : null}
           </div>
@@ -732,9 +683,7 @@ export default function BracketPage() {
 
           {/* (everything below stays exactly the same as your file) */}
           <div className="sheet-title">Playoff Bracket</div>
-          <div className="sheet-sub">
-            Semis → Final • Third-place match included
-          </div>
+          <div className="sheet-sub">Semis → Final • Third-place match included</div>
 
           <div className="grid3">
             {/* Semis with seeds */}
@@ -742,16 +691,12 @@ export default function BracketPage() {
               <div className="section-title">Semifinal 1 (to 15)</div>
               <div className="match-box">
                 <div className="match-row">
-                  <div>
-                    {semis[0] ? seededTeamLabel(semis[0].teamAId) : "TBD"}
-                  </div>
+                  <div>{semis[0] ? seededTeamLabel(semis[0].teamAId) : "TBD"}</div>
                   {renderScoreOrBox(semis[0]?.scoreA)}
                 </div>
                 <div style={{ height: 8 }} />
                 <div className="match-row">
-                  <div>
-                    {semis[0] ? seededTeamLabel(semis[0].teamBId) : "TBD"}
-                  </div>
+                  <div>{semis[0] ? seededTeamLabel(semis[0].teamBId) : "TBD"}</div>
                   {renderScoreOrBox(semis[0]?.scoreB)}
                 </div>
               </div>
@@ -761,16 +706,12 @@ export default function BracketPage() {
               </div>
               <div className="match-box">
                 <div className="match-row">
-                  <div>
-                    {semis[1] ? seededTeamLabel(semis[1].teamAId) : "TBD"}
-                  </div>
+                  <div>{semis[1] ? seededTeamLabel(semis[1].teamAId) : "TBD"}</div>
                   {renderScoreOrBox(semis[1]?.scoreA)}
                 </div>
                 <div style={{ height: 8 }} />
                 <div className="match-row">
-                  <div>
-                    {semis[1] ? seededTeamLabel(semis[1].teamBId) : "TBD"}
-                  </div>
+                  <div>{semis[1] ? seededTeamLabel(semis[1].teamBId) : "TBD"}</div>
                   {renderScoreOrBox(semis[1]?.scoreB)}
                 </div>
               </div>
@@ -782,18 +723,14 @@ export default function BracketPage() {
               <div className="match-box">
                 <div className="match-row">
                   <div>
-                    {finalMatch
-                      ? seededTeamLabel(finalMatch.teamAId)
-                      : "Winner SF1"}
+                    {finalMatch ? seededTeamLabel(finalMatch.teamAId) : "Winner SF1"}
                   </div>
                   {renderScoreOrBox(finalMatch?.scoreA)}
                 </div>
                 <div style={{ height: 8 }} />
                 <div className="match-row">
                   <div>
-                    {finalMatch
-                      ? seededTeamLabel(finalMatch.teamBId)
-                      : "Winner SF2"}
+                    {finalMatch ? seededTeamLabel(finalMatch.teamBId) : "Winner SF2"}
                   </div>
                   {renderScoreOrBox(finalMatch?.scoreB)}
                 </div>
@@ -805,18 +742,14 @@ export default function BracketPage() {
               <div className="match-box">
                 <div className="match-row">
                   <div>
-                    {thirdMatch
-                      ? seededTeamLabel(thirdMatch.teamAId)
-                      : "Loser SF1"}
+                    {thirdMatch ? seededTeamLabel(thirdMatch.teamAId) : "Loser SF1"}
                   </div>
                   {renderScoreOrBox(thirdMatch?.scoreA)}
                 </div>
                 <div style={{ height: 8 }} />
                 <div className="match-row">
                   <div>
-                    {thirdMatch
-                      ? seededTeamLabel(thirdMatch.teamBId)
-                      : "Loser SF2"}
+                    {thirdMatch ? seededTeamLabel(thirdMatch.teamBId) : "Loser SF2"}
                   </div>
                   {renderScoreOrBox(thirdMatch?.scoreB)}
                 </div>

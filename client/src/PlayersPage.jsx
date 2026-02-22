@@ -59,8 +59,104 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+function PlayersCardList({ players, onDelete }) {
+  return (
+    <Stack gap={3}>
+      {players.map((p) => {
+        const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
+        const tier = p.duprTier ?? duprTierFromNumber(duprVal);
 
+        return (
+          <Box
+            key={p.id ?? p.email ?? p.name}
+            border="1px solid"
+            borderColor="border"
+            borderRadius="2xl"
+            p={4}
+            bg={p._optimistic ? "green.50" : "white"}
+          >
+            <HStack justify="space-between" align="start" gap={3}>
+              <Box>
+                <Text fontWeight="800">
+                  {p.name ?? "Unnamed"}
+                  {p._optimistic ? (
+                    <Badge ml={2} variant="pickle">
+                      Just joined
+                    </Badge>
+                  ) : null}
+                </Text>
 
+                <HStack mt={2} gap={2} wrap="wrap">
+                  <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
+                  <Badge variant="club">{tier}</Badge>
+                </HStack>
+              </Box>
+
+              {!p._optimistic ? (
+                <IconButton
+                  aria-label="Delete player"
+                  variant="outline"
+                  onClick={() => onDelete(p.id)}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              ) : null}
+            </HStack>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function TeamsCardList({ teams, onRename, onDelete, deletingTeamId, tid }) {
+  return (
+    <Stack gap={3}>
+      {teams.map((t) => (
+        <Box
+          key={t.id}
+          border="1px solid"
+          borderColor="border"
+          borderRadius="2xl"
+          p={4}
+          bg="white"
+        >
+          <HStack justify="space-between" align="start" gap={3}>
+            <Box>
+              <Text fontWeight="800">{t.name}</Text>
+              <Text mt={2} fontWeight="600" opacity={0.9}>
+                {(t.players ?? [])
+                  .map((p) => p.name)
+                  .filter(Boolean)
+                  .join(" / ") || "—"}
+              </Text>
+            </Box>
+
+            <HStack gap={2} wrap="wrap" justify="flex-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onRename(t)}
+                disabled={!tid}
+              >
+                Rename
+              </Button>
+
+              <IconButton
+                aria-label="Delete team"
+                variant="outline"
+                onClick={() => onDelete(t.id)}
+                disabled={!tid || deletingTeamId === t.id}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            </HStack>
+          </HStack>
+        </Box>
+      ))}
+    </Stack>
+  );
+}
 
 export default function PlayersPage() {
   usePageTitle("Players");
@@ -599,6 +695,11 @@ export default function PlayersPage() {
                     Add Player
                   </Button>
                 </Box>
+              ) : isMobile ? (
+                <PlayersCardList
+                  players={filteredPlayers}
+                  onDelete={deletePlayer}
+                />
               ) : (
                 <Box overflowX="auto">
                   <Table.Root size="md" variant="outline">

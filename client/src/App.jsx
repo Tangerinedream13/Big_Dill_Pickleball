@@ -260,9 +260,23 @@ export default function App() {
                 order={{ base: 1, md: 0 }}
               >
                 <HStack gap={3} align="center" flexWrap="wrap">
-                  <Heading size={{ base: "lg", md: "xl" }}>
+                  {/* Mobile-only small icon next to title */}
+                  <Box
+                    display={{ base: "block", md: "none" }}
+                    as="img"
+                    src={heroImg}
+                    alt="Pickleball"
+                    h="44px"
+                    w="44px"
+                    objectFit="cover"
+                    borderRadius="xl"
+                    flexShrink={0}
+                  />
+
+                  <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
                     Big Dill Pickleball
                   </Heading>
+
                   {/* divider hidden on small screens to reduce clutter */}
                   <Box
                     display={{ base: "none", sm: "block" }}

@@ -59,12 +59,13 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
-function PlayersCardList({ players, onDelete }) {
+function PlayersCardList({ players, onDelete, playerTeamMap }) {
   return (
     <Stack gap={3}>
       {players.map((p) => {
         const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+        const teamName = playerTeamMap?.get(String(p.id)) ?? "";
 
         return (
           <Box
@@ -89,6 +90,7 @@ function PlayersCardList({ players, onDelete }) {
                 <HStack mt={2} gap={2} wrap="wrap">
                   <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
                   <Badge variant="club">{tier}</Badge>
+                  {teamName ? <Badge variant="pickle">{teamName}</Badge> : null}
                 </HStack>
               </Box>
 
@@ -164,10 +166,19 @@ export default function PlayersPage() {
   const navigate = useNavigate();
   const tid = getCurrentTournamentId();
 
-  function withTid(path) {
+  function apiUrl(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
     const p = path.startsWith("/") ? path : `/${path}`;
-    const u = new URL(`${base}${p}`, window.location.origin);
+
+    // Local dev: Vite proxy handles /api -> localhost:3001
+    if (!base) return p;
+
+    // Prod: hit the API subdomain directly
+    return `${base}${p}`;
+  }
+
+  function withTid(path) {
+    const u = new URL(apiUrl(path), window.location.origin);
     if (tid) u.searchParams.set("tournamentId", tid);
     return u.toString();
   }
@@ -218,7 +229,7 @@ export default function PlayersPage() {
       }
 
       setStatus("loading");
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/players`);
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const serverPlayers = await res.json();
@@ -258,7 +269,7 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/teams`);
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/teams`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
@@ -301,6 +312,18 @@ export default function PlayersPage() {
       return name.includes(q) || String(duprVal).toLowerCase().includes(q);
     });
   }, [players, query]);
+
+  const playerTeamMap = useMemo(() => {
+    const m = new Map();
+    for (const t of teams ?? []) {
+      const teamName = t?.name ?? "";
+      for (const pl of t.players ?? []) {
+        if (pl?.id == null) continue;
+        m.set(String(pl.id), teamName);
+      }
+    }
+    return m;
+  }, [teams]);
 
   const assignedPlayerIds = useMemo(() => {
     const s = new Set();
@@ -367,7 +390,7 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/players`, {
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, duprRating }),
@@ -391,12 +414,9 @@ export default function PlayersPage() {
     if (!confirm("Delete this player?")) return;
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/tournaments/${tid}/players/${id}`,
-        {
-          method: "DELETE",
-        }
-      );
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       await loadPlayers();
@@ -424,7 +444,7 @@ export default function PlayersPage() {
     setCreateTeamStatus("saving");
 
     try {
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/teams`, {
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/teams`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -699,6 +719,7 @@ export default function PlayersPage() {
                 <PlayersCardList
                   players={filteredPlayers}
                   onDelete={deletePlayer}
+                  playerTeamMap={playerTeamMap}
                 />
               ) : (
                 <Box overflowX="auto">
@@ -708,6 +729,7 @@ export default function PlayersPage() {
                         <Table.ColumnHeader>Name</Table.ColumnHeader>
                         <Table.ColumnHeader>DUPR</Table.ColumnHeader>
                         <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                        <Table.ColumnHeader>Team</Table.ColumnHeader>
                         <Table.ColumnHeader textAlign="end">
                           Actions
                         </Table.ColumnHeader>
@@ -719,6 +741,7 @@ export default function PlayersPage() {
                         const duprVal =
                           p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
                         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+                        const teamName = playerTeamMap.get(String(p.id)) ?? "";
 
                         return (
                           <Table.Row key={p.id ?? p.email ?? p.name}>
@@ -734,6 +757,14 @@ export default function PlayersPage() {
 
                             <Table.Cell>
                               <Badge variant="club">{tier}</Badge>
+                            </Table.Cell>
+
+                            <Table.Cell>
+                              {teamName ? (
+                                <Badge variant="pickle">{teamName}</Badge>
+                              ) : (
+                                <Text opacity={0.6}>—</Text>
+                              )}
                             </Table.Cell>
 
                             <Table.Cell textAlign="end">

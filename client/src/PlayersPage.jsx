@@ -741,14 +741,6 @@ export default function PlayersPage() {
                             </Table.Cell>
 
                             <Table.Cell>
-                              {teamName ? (
-                                <Badge variant="pickle">{teamName}</Badge>
-                              ) : (
-                                <Text opacity={0.6}>—</Text> 
-                              )}
-                            </Table.Cell>
-
-                            <Table.Cell>
                               <Badge variant="club">
                                 {formatDupr(duprVal)}
                               </Badge>
@@ -756,6 +748,14 @@ export default function PlayersPage() {
 
                             <Table.Cell>
                               <Badge variant="club">{tier}</Badge>
+                            </Table.Cell>
+
+                            <Table.Cell>
+                              {teamName ? (
+                                <Badge variant="pickle">{teamName}</Badge>
+                              ) : (
+                                <Text opacity={0.6}>—</Text>
+                              )}
                             </Table.Cell>
 
                             <Table.Cell textAlign="end">

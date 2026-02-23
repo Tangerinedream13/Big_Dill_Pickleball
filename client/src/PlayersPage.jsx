@@ -59,12 +59,13 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
-function PlayersCardList({ players, onDelete }) {
+function PlayersCardList({ players, onDelete, playerTeamMap }) {
   return (
     <Stack gap={3}>
       {players.map((p) => {
         const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
+        const teamName = playerTeamMap?.get(String(p.id)) ?? "";
 
         return (
           <Box
@@ -89,6 +90,7 @@ function PlayersCardList({ players, onDelete }) {
                 <HStack mt={2} gap={2} wrap="wrap">
                   <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
                   <Badge variant="club">{tier}</Badge>
+                  {teamName ? <Badge variant="pickle">{teamName}</Badge> : null}
                 </HStack>
               </Box>
 
@@ -711,6 +713,7 @@ export default function PlayersPage() {
                 <PlayersCardList
                   players={filteredPlayers}
                   onDelete={deletePlayer}
+                  playerTeamMap={playerTeamMap}
                 />
               ) : (
                 <Box overflowX="auto">

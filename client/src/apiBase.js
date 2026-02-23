@@ -1,5 +1,5 @@
 // client/src/apiBase.js
-const envBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
+const envBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 const host = window.location.hostname;
 
@@ -10,5 +10,6 @@ const defaultProdApi =
   host.endsWith(".up.railway.app")
     ? "https://api.big-dill-pickleball.com"
     : "";
+
+// Final API base used by the app
 export const API_BASE = envBase || defaultProdApi || "";
- 

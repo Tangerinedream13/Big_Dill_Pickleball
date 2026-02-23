@@ -166,10 +166,19 @@ export default function PlayersPage() {
   const navigate = useNavigate();
   const tid = getCurrentTournamentId();
 
-  function withTid(path) {
+  function apiUrl(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
     const p = path.startsWith("/") ? path : `/${path}`;
-    const u = new URL(`${base}${p}`, window.location.origin);
+
+    // Local dev: Vite proxy handles /api -> localhost:3001
+    if (!base) return p;
+
+    // Prod: hit the API subdomain directly
+    return `${base}${p}`;
+  }
+
+  function withTid(path) {
+    const u = new URL(apiUrl(path), window.location.origin);
     if (tid) u.searchParams.set("tournamentId", tid);
     return u.toString();
   }
@@ -220,7 +229,7 @@ export default function PlayersPage() {
       }
 
       setStatus("loading");
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/players`);
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const serverPlayers = await res.json();
@@ -260,7 +269,7 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/teams`);
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/teams`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
@@ -381,7 +390,7 @@ export default function PlayersPage() {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/players`, {
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, duprRating }),
@@ -405,12 +414,9 @@ export default function PlayersPage() {
     if (!confirm("Delete this player?")) return;
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/tournaments/${tid}/players/${id}`,
-        {
-          method: "DELETE",
-        }
-      );
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error);
       await loadPlayers();
@@ -438,7 +444,7 @@ export default function PlayersPage() {
     setCreateTeamStatus("saving");
 
     try {
-      const res = await fetch(`${API_BASE}/api/tournaments/${tid}/teams`, {
+      const res = await fetch(apiUrl(`/api/tournaments/${tid}/teams`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

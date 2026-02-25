@@ -1,6 +1,5 @@
 /* src/index.css */
 
-/* Let Chakra control typography + colors; don't fight it */
 html, body, #root {
   height: 100%;
 }
@@ -9,7 +8,6 @@ body {
   margin: 0;
 }
 
-/* Optional: keep images behaving nicely */
 img {
   max-width: 100%;
   display: block;

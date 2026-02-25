@@ -2,6 +2,7 @@
   "name": "big_dill_pickleball",
   "version": "1.0.0",
   "main": "server.js",
+  "license": "UNLICENSED",
   "scripts": {
     "build": "cd ../client && npm install && npm run build",
     "start": "node server.js",

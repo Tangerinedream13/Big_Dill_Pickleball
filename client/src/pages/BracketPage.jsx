@@ -476,7 +476,7 @@ export default function BracketPage() {
         </Portal>
       ) : null}
 
-      {/* Header / controls (won't print) */}
+      {/* Header */}
       <HStack mb={6} className="no-print" flexWrap="wrap" gap={3} align="start">
         <IconButton
           aria-label="Home"
@@ -522,8 +522,8 @@ export default function BracketPage() {
 
       {loading && teams.length === 0 ? <Text>Loading…</Text> : null}
 
-            {/* On-screen bracket (desktop-style, responsive for mobile too) */}
-            <Box className="print-sheet">
+      {/* On-screen bracket (desktop-style, responsive for mobile too) */}
+      <Box className="print-sheet">
         <div className="sheet-title">Big Dill Pickleball Tournament Sheet</div>
         <div className="sheet-sub">
           Tournament ID: {state.tournamentId || tid || "—"} • Printed:{" "}

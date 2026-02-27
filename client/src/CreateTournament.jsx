@@ -265,7 +265,6 @@ function CreateTournament() {
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* Sticky cream header to match other pages */}
       <StickyPageHeader>
         <Stack gap={3} w="100%">
           <Flex
@@ -296,8 +295,6 @@ function CreateTournament() {
                 <Badge variant="club">Needs attention</Badge>
               )}
             </HStack>
-
-            {/* keep empty to mirror other sticky headers spacing */}
             <Box />
           </Flex>
 

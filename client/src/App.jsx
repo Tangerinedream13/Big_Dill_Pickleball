@@ -436,8 +436,6 @@ export default function App() {
               </Stack>
             </Flex>
           </Surface>
-
-          {/* Action tiles grid already good; just tighten mobile spacing */}
           <Grid
             templateColumns={{
               base: "1fr",

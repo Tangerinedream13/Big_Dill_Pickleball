@@ -15,6 +15,51 @@ function parseId(v) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+function sanitizePublicPlayer(row, idx = null) {
+  let name = "Player";
+
+  if (row.useAliasesPublic && row.publicAlias) {
+    name = row.publicAlias;
+  } else if (row.showPlayerNamesPublic) {
+    name = row.name;
+  } else if (idx != null) {
+    name = `Player ${idx + 1}`;
+  }
+
+  const out = {
+    id: row.id,
+    name,
+  };
+
+  if (row.showDuprPublic) {
+    out.duprRating = row.duprRating;
+    out.selfRating = row.selfRating;
+    out.skillSource = row.skillSource;
+  }
+
+  return out;
+}
+
+async function getTournamentVisibilitySettings(tournamentId) {
+  const r = await pool.query(
+    `
+    select
+      id,
+      name,
+      is_public as "isPublic",
+      show_player_names_public as "showPlayerNamesPublic",
+      show_dupr_public as "showDuprPublic",
+      use_aliases_public as "useAliasesPublic"
+    from tournaments
+    where id = $1
+    limit 1;
+    `,
+    [tournamentId]
+  );
+
+  return r.rows[0] || null;
+}
+
 /* ------------------ TOURNAMENTS ------------------ */
 
 // GET /api/tournaments
@@ -96,6 +141,51 @@ router.get("/:id/info", async (req, res) => {
     return res.json(r.rows[0]);
   } catch (err) {
     console.error("GET /api/tournaments/:id/info error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// GET /api/tournaments/:id/public-info
+router.get("/:id/public-info", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      select
+        id,
+        name,
+        event_date as "eventDate",
+        start_time as "startTime",
+        end_time as "endTime",
+        location_name as "locationName",
+        address,
+        details,
+        parking_info as "parkingInfo",
+        check_in_info as "checkInInfo",
+        contact_email as "contactEmail",
+        is_public as "isPublic"
+      from tournaments
+      where id = $1
+      limit 1;
+      `,
+      [tournamentId]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "Tournament not found." });
+    }
+
+    if (!r.rows[0].isPublic) {
+      return res.status(403).json({ error: "This tournament is private." });
+    }
+
+    return res.json(r.rows[0]);
+  } catch (err) {
+    console.error("GET /api/tournaments/:id/public-info error:", err);
     return res.status(500).json({ error: errToMessage(err) });
   }
 });
@@ -192,9 +282,6 @@ router.patch("/:id/info", async (req, res) => {
 });
 
 // DELETE /api/tournaments/:id
-// Deletes the tournament and tournament-scoped data.
-// If tournament doesn't exist -> 404
-// Otherwise deletes matches + joins, then tournament.
 router.delete("/:id", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   if (!tournamentId) {
@@ -263,16 +350,121 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-/* ------------------ OPTION A: TOURNAMENT DOUBLES TEAMS ------------------ */
-/**
- * Shape returned from GET must match PlayersPage.jsx:
- * [
- *   { id, name, players: [{id,name,email,duprRating}, ...] },
- *   ...
- * ]
- */
+/* ------------------ PUBLIC VIEWS ------------------ */
 
-// GET /api/tournaments/:id/teams  (list doubles teams + members)
+// GET /api/tournaments/:id/public-players
+router.get("/:id/public-players", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const settings = await getTournamentVisibilitySettings(tournamentId);
+
+    if (!settings) {
+      return res.status(404).json({ error: "Tournament not found." });
+    }
+
+    if (!settings.isPublic) {
+      return res.status(403).json({ error: "This tournament is private." });
+    }
+
+    const r = await pool.query(
+      `
+      select
+        p.id,
+        p.name,
+        p.public_alias as "publicAlias",
+        p.dupr_rating as "duprRating",
+        p.self_rating as "selfRating",
+        p.skill_source as "skillSource",
+        $2::boolean as "showPlayerNamesPublic",
+        $3::boolean as "showDuprPublic",
+        $4::boolean as "useAliasesPublic"
+      from tournament_players tp
+      join players p on p.id = tp.player_id
+      where tp.tournament_id = $1
+      order by p.id desc;
+      `,
+      [
+        tournamentId,
+        settings.showPlayerNamesPublic,
+        settings.showDuprPublic,
+        settings.useAliasesPublic,
+      ]
+    );
+
+    return res.json(r.rows.map((row, idx) => sanitizePublicPlayer(row, idx)));
+  } catch (err) {
+    console.error("GET /api/tournaments/:id/public-players error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// GET /api/tournaments/:id/public-matches
+router.get("/:id/public-matches", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const settings = await getTournamentVisibilitySettings(tournamentId);
+
+    if (!settings) {
+      return res.status(404).json({ error: "Tournament not found." });
+    }
+
+    if (!settings.isPublic) {
+      return res.status(403).json({ error: "This tournament is private." });
+    }
+
+    const matchesRes = await pool.query(
+      `
+      select
+        code as "id",
+        phase,
+        team_a_id as "teamAId",
+        team_b_id as "teamBId",
+        score_a as "scoreA",
+        score_b as "scoreB",
+        winner_id as "winnerId",
+        start_time as "startTime",
+        court,
+        status
+      from matches
+      where tournament_id = $1
+      order by
+        case
+          when code like 'RR-%' then 1
+          when code like 'SF%' then 2
+          when code = 'FINAL' then 3
+          when code = 'THIRD' then 4
+          else 9
+        end,
+        code;
+      `,
+      [tournamentId]
+    );
+
+    return res.json({
+      tournamentId,
+      isPublic: settings.isPublic,
+      matches: matchesRes.rows.map((m) => ({
+        ...m,
+        status: m.status || (m.winnerId ? "completed" : "pending"),
+      })),
+    });
+  } catch (err) {
+    console.error("GET /api/tournaments/:id/public-matches error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+/* ------------------ TOURNAMENT DOUBLES TEAMS ------------------ */
+
+// GET /api/tournaments/:id/teams
 router.get("/:id/teams", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   if (!tournamentId)
@@ -290,7 +482,10 @@ router.get("/:id/teams", async (req, res) => {
               'id', p.id,
               'name', p.name,
               'email', p.email,
-              'duprRating', p.dupr_rating
+              'duprRating', p.dupr_rating,
+              'selfRating', p.self_rating,
+              'skillSource', p.skill_source,
+              'publicAlias', p.public_alias
             )
             order by p.id
           ) filter (where p.id is not null),
@@ -314,7 +509,7 @@ router.get("/:id/teams", async (req, res) => {
   }
 });
 
-// POST /api/tournaments/:id/teams  (create doubles team)
+// POST /api/tournaments/:id/teams
 router.post("/:id/teams", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   const playerAId = parseId(req.body?.playerAId);
@@ -408,7 +603,6 @@ router.post("/:id/teams", async (req, res) => {
 });
 
 // DELETE /api/tournaments/:id/teams/:teamId
-// Removes the team from THIS tournament and cleans up the team + team_players.
 router.delete("/:id/teams/:teamId", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   const teamId = parseId(req.params.teamId);

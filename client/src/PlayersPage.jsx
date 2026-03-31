@@ -409,10 +409,17 @@ export default function PlayersPage() {
     let duprRating = null;
     if (newDupr.trim() !== "") {
       const n = Number(newDupr);
+
       if (!Number.isFinite(n)) {
-        alert("DUPR must be a number (ex: 3.25).");
+        alert("DUPR must be a number.");
         return;
       }
+
+      if (n < 2.0 || n > 6.99) {
+        alert("DUPR must be between 2.00 and 6.99, or leave it blank.");
+        return;
+      }
+
       duprRating = Math.round(n * 100) / 100;
     }
 
@@ -806,7 +813,9 @@ export default function PlayersPage() {
                                   {formatSelfRating(selfRating)}
                                 </Badge>
                               ) : (
-                                <Text opacity={0.6}>Official / entered DUPR</Text>
+                                <Text opacity={0.6}>
+                                  Official / entered DUPR
+                                </Text>
                               )}
                             </Table.Cell>
 
@@ -1045,7 +1054,7 @@ export default function PlayersPage() {
 
                       <Stack gap={2}>
                         <Input
-                          placeholder="DUPR (optional)"
+                          placeholder="DUPR 2.00–6.99 (optional)"
                           value={newDupr}
                           onChange={(e) => setNewDupr(e.target.value)}
                           inputMode="decimal"
@@ -1057,7 +1066,10 @@ export default function PlayersPage() {
 
                       <Stack gap={2}>
                         <Text fontSize="sm" fontWeight="700">
-                          Skill level {needsSelfRating ? "(required if DUPR is blank)" : "(optional)"}
+                          Skill level{" "}
+                          {needsSelfRating
+                            ? "(required if DUPR is blank)"
+                            : "(optional)"}
                         </Text>
 
                         <Select.Root
@@ -1080,7 +1092,8 @@ export default function PlayersPage() {
                         </Select.Root>
 
                         <Text fontSize="xs" opacity={0.7}>
-                          This helps create fairer matchups when official DUPR is unknown.
+                          This helps create fairer matchups when official DUPR
+                          is unknown.
                         </Text>
                       </Stack>
                     </Stack>

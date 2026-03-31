@@ -18,6 +18,15 @@ module.exports = (pool) => {
     return Math.round(num * 100) / 100;
   }
 
+  function validateDuprRange(dupr) {
+    if (dupr === null) return null;
+    if (Number.isNaN(dupr)) return "DUPR must be a number.";
+    if (dupr < 2.0 || dupr > 6.99) {
+      return "DUPR must be between 2.00 and 6.99 (or leave it blank).";
+    }
+    return null;
+  }
+
   function normalizeSelfRating(v) {
     const s = (v ?? "").toString().trim().toLowerCase();
     return s || null;
@@ -73,11 +82,14 @@ module.exports = (pool) => {
     const selfRating = req.body?.selfRating;
 
     if (!name) return res.status(400).json({ error: "Name is required." });
+
     if (!email || !email.includes("@")) {
       return res.status(400).json({ error: "Valid email is required." });
     }
-    if (Number.isNaN(dupr)) {
-      return res.status(400).json({ error: "DUPR must be a number." });
+
+    const duprError = validateDuprRange(dupr);
+    if (duprError) {
+      return res.status(400).json({ error: duprError });
     }
 
     const skill = deriveSkillFields({ dupr, selfRating });
@@ -200,8 +212,9 @@ module.exports = (pool) => {
         .status(400)
         .json({ error: "Valid email is required (or leave blank)." });
     }
-    if (Number.isNaN(dupr)) {
-      return res.status(400).json({ error: "DUPR must be a number." });
+    const duprError = validateDuprRange(dupr);
+    if (duprError) {
+      return res.status(400).json({ error: duprError });
     }
 
     const skill = deriveSkillFields({ dupr, selfRating });

@@ -197,6 +197,18 @@ export default function App({ user, setUser }) {
     setJoinError("");
     setJoinStatus("saving");
 
+    const trimmedDupr = joinDupr.trim();
+
+    if (trimmedDupr !== "") {
+      const n = Number(trimmedDupr);
+
+      if (!Number.isFinite(n) || n < 2.0 || n > 6.99) {
+        setJoinError("DUPR must be between 2.00 and 6.99, or leave it blank.");
+        setJoinStatus("idle");
+        return;
+      }
+    }
+
     const payload = {
       name: joinName.trim(),
       email: joinEmail.trim().toLowerCase(),
@@ -224,7 +236,8 @@ export default function App({ user, setUser }) {
         email: payload.email,
         duprRating: data?.duprRating ?? payload.duprRating ?? "—",
         selfRating: data?.selfRating ?? payload.selfRating ?? null,
-        skillSource: data?.skillSource ?? (payload.duprRating ? "dupr" : "self_rating"),
+        skillSource:
+          data?.skillSource ?? (payload.duprRating ? "dupr" : "self_rating"),
         _optimistic: true,
       });
 
@@ -329,7 +342,10 @@ export default function App({ user, setUser }) {
                         </Button>
                       </>
                     ) : (
-                      <Button variant="outline" onClick={() => navigate("/login")}>
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate("/login")}
+                      >
                         <LogIn size={16} style={{ marginRight: 8 }} />
                         Admin Login
                       </Button>
@@ -451,19 +467,23 @@ export default function App({ user, setUser }) {
 
                         <Stack gap={2}>
                           <Input
-                            placeholder="DUPR (optional)"
+                            placeholder="DUPR 2.00–6.99 (optional)"
                             value={joinDupr}
                             onChange={(e) => setJoinDupr(e.target.value)}
                             disabled={isSubmitting}
                           />
                           <Text fontSize="xs" opacity={0.7}>
-                            If you don’t know your DUPR, leave it blank and choose a skill level below.
+                            If you don’t know your DUPR, leave it blank and
+                            choose a skill level below.
                           </Text>
                         </Stack>
 
                         <Stack gap={2}>
                           <Text fontSize="sm" fontWeight="700">
-                            Skill level {needsSelfRating ? "(required if DUPR is blank)" : "(optional)"}
+                            Skill level{" "}
+                            {needsSelfRating
+                              ? "(required if DUPR is blank)"
+                              : "(optional)"}
                           </Text>
 
                           <Select.Root
@@ -487,7 +507,8 @@ export default function App({ user, setUser }) {
                           </Select.Root>
 
                           <Text fontSize="xs" opacity={0.7}>
-                            This helps us create fairer matchups if you do not have an official DUPR.
+                            This helps us create fairer matchups if you do not
+                            have an official DUPR.
                           </Text>
                         </Stack>
 

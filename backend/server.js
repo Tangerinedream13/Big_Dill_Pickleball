@@ -24,6 +24,14 @@ const path = require("path");
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+const session = require("express-session");
+const pgSession = require("connect-pg-simple")(session);
+const pool = require("./db");
+
+if (!process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET is required.");
+}
+
 /* -----------------------------
    CORS
 ------------------------------ */
@@ -61,19 +69,46 @@ app.options(/.*/, cors(corsOptions)); // preflight
 
 // body parsing
 app.use(express.json());
+app.set("trust proxy", 1);
+
+app.use(
+  session({
+    store: new pgSession({
+      pool,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+    }),
+    name: "bigdill.sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+    },
+  })
+);
 
 /* -----------------------------
    Imports
 ------------------------------ */
-const pool = require("./db");
 bootLog("after db");
 
 const engine = require("./tournamentEngine");
 bootLog("after engine");
 
+const authRoutes = require("./routes/auth");
 const teamsRoutes = require("./routes/teams");
 const tournamentsRoutes = require("./routes/tournaments");
 const signupRoutes = require("./routes/signup");
+const {
+  requireAuth,
+  requireRole,
+  requirePlayerOwnerOrAdmin,
+  requireRegistrationUnlocked,
+} = require("./middleware/auth");
 
 /* -----------------------------
    Helpers
@@ -129,6 +164,7 @@ function validatePickleballScore(
 ------------------------------ */
 bootLog("server.js loaded, routes about to be registered");
 
+app.use("/api/auth", authRoutes);
 app.use("/api/teams", teamsRoutes);
 app.use("/api/tournaments", tournamentsRoutes);
 app.use("/api", signupRoutes(pool));
@@ -408,7 +444,6 @@ app.post("/api/playoffs/generate", async (req, res) => {
   }
 });
 
-
 /* -----------------------------
   Playoffs: Score Semis + Finals (15-point + edit + scratch + forfeit)
   - Semis:  POST /api/playoffs/semis/:id/score   (SF1, SF2)
@@ -470,7 +505,14 @@ async function setWinnerOnly({ tournamentId, phase, code, winnerId }) {
   );
 }
 
-async function setScore({ tournamentId, phase, code, scoreA, scoreB, winnerId }) {
+async function setScore({
+  tournamentId,
+  phase,
+  code,
+  scoreA,
+  scoreB,
+  winnerId,
+}) {
   await pool.query(
     `
     update matches
@@ -524,7 +566,10 @@ async function sendState(tournamentId, res) {
   const teams = await getTeamsForTournament(tournamentId);
   const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
   const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-  const finals = await getMatchesForTournamentByPhase(tournamentId, ["FINAL", "THIRD"]);
+  const finals = await getMatchesForTournamentByPhase(tournamentId, [
+    "FINAL",
+    "THIRD",
+  ]);
 
   const standings = engine.computeStandings(
     teams.map((t) => t.id),
@@ -555,7 +600,9 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     const id = String(req.params.id || "").toUpperCase();
 
     if (id !== "SF1" && id !== "SF2") {
-      return res.status(400).json({ error: "Invalid semifinal id. Use SF1 or SF2." });
+      return res
+        .status(400)
+        .json({ error: "Invalid semifinal id. Use SF1 or SF2." });
     }
 
     // Match must exist
@@ -599,7 +646,11 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     }
 
     // 2) Forfeit / override winner
-    if (winnerIdRaw !== undefined && winnerIdRaw !== null && winnerIdRaw !== "") {
+    if (
+      winnerIdRaw !== undefined &&
+      winnerIdRaw !== null &&
+      winnerIdRaw !== ""
+    ) {
       const w = Number(winnerIdRaw);
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
@@ -607,7 +658,9 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
       if (w !== a && w !== b) {
-        return res.status(400).json({ error: "winnerId must be Team A or Team B for this match." });
+        return res
+          .status(400)
+          .json({ error: "winnerId must be Team A or Team B for this match." });
       }
 
       await setWinnerOnly({ tournamentId, phase: "SF", code: id, winnerId: w });
@@ -619,7 +672,10 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     // 3) Normal scoring (PLAYOFFS = 15 win-by-2)
     const { scoreA, scoreB } = req.body;
 
-    const msg = validatePickleballScore(scoreA, scoreB, { playTo: 15, winBy: 2 });
+    const msg = validatePickleballScore(scoreA, scoreB, {
+      playTo: 15,
+      winBy: 2,
+    });
     if (msg) return res.status(400).json({ error: msg });
 
     const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
@@ -651,7 +707,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     const id = String(req.params.id || "").toUpperCase();
 
     if (id !== "FINAL" && id !== "THIRD") {
-      return res.status(400).json({ error: "Invalid finals id. Use FINAL or THIRD." });
+      return res
+        .status(400)
+        .json({ error: "Invalid finals id. Use FINAL or THIRD." });
     }
 
     const mRes = await pool.query(
@@ -679,7 +737,11 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     }
 
     // 2) Forfeit / override winner
-    if (winnerIdRaw !== undefined && winnerIdRaw !== null && winnerIdRaw !== "") {
+    if (
+      winnerIdRaw !== undefined &&
+      winnerIdRaw !== null &&
+      winnerIdRaw !== ""
+    ) {
       const w = Number(winnerIdRaw);
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
@@ -687,7 +749,9 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
       if (w !== a && w !== b) {
-        return res.status(400).json({ error: "winnerId must be Team A or Team B for this match." });
+        return res
+          .status(400)
+          .json({ error: "winnerId must be Team A or Team B for this match." });
       }
 
       await setWinnerOnly({ tournamentId, phase: id, code: id, winnerId: w });
@@ -697,7 +761,10 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     // 3) Normal scoring (PLAYOFFS = 15 win-by-2)
     const { scoreA, scoreB } = req.body;
 
-    const msg = validatePickleballScore(scoreA, scoreB, { playTo: 15, winBy: 2 });
+    const msg = validatePickleballScore(scoreA, scoreB, {
+      playTo: 15,
+      winBy: 2,
+    });
     if (msg) return res.status(400).json({ error: msg });
 
     const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
@@ -717,6 +784,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     res.status(500).json({ error: errToMessage(err) });
   }
 });
+
 /* -----------------------------
    Tournament-scoped Players + Team Creation
 ------------------------------ */
@@ -761,45 +829,172 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
   }
 });
 
-// POST create a doubles team (exactly 2 players)
-app.post("/api/tournaments/:tid/teams", async (req, res) => {
-  const tid = Number(req.params.tid);
-  const playerAId = Number(req.body.playerAId);
-  const playerBId = Number(req.body.playerBId);
-  const requestedName = (req.body.teamName ?? "").toString().trim();
-
-  if (!Number.isInteger(tid) || tid <= 0) {
-    return res.status(400).json({ error: "Invalid tournament id." });
-  }
-  if (!Number.isInteger(playerAId) || !Number.isInteger(playerBId)) {
-    return res
-      .status(400)
-      .json({ error: "playerAId and playerBId are required." });
-  }
-  if (playerAId === playerBId) {
-    return res.status(400).json({ error: "Pick two different players." });
-  }
-
-  const client = await pool.connect();
+// POST create a player in a specific tournament
+app.post("/api/tournaments/:tid/players", async (req, res) => {
   try {
-    await client.query("BEGIN");
+    const tid = Number(req.params.tid);
+    if (!Number.isInteger(tid) || tid <= 0) {
+      return res.status(400).json({ error: "Invalid tournament id." });
+    }
 
-    const inTournament = await client.query(
+    const name = (req.body.name ?? "").toString().trim();
+    const email = (req.body.email ?? "").toString().trim() || null;
+    const dupr = parseDupr(req.body.duprRating);
+
+    if (!name) return res.status(400).json({ error: "Name is required." });
+    if (Number.isNaN(dupr)) {
+      return res.status(400).json({ error: "DUPR must be a number." });
+    }
+    if (dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
+      return res
+        .status(400)
+        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+    }
+
+    const inserted = await pool.query(
       `
+      insert into players (name, email, dupr_rating)
+      values ($1, $2, $3)
+      returning id, name, email, dupr_rating as "duprRating";
+      `,
+      [name, email, dupr]
+    );
+
+    const player = inserted.rows[0];
+
+    await pool.query(
+      `
+      insert into tournament_players (tournament_id, player_id)
+      values ($1, $2);
+      `,
+      [tid, player.id]
+    );
+
+    return res.status(201).json({
+      ...player,
+      duprTier: duprLabel(player.duprRating),
+    });
+  } catch (err) {
+    console.error("POST /api/tournaments/:tid/players error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// DELETE player from a specific tournament
+app.delete("/api/tournaments/:tid/players/:id", async (req, res) => {
+  try {
+    const tid = Number(req.params.tid);
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(tid) || tid <= 0) {
+      return res.status(400).json({ error: "Invalid tournament id." });
+    }
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid player id." });
+    }
+
+    const teamUse = await pool.query(
+      `
+      select 1
+      from team_players tp
+      join tournament_teams tt on tt.team_id = tp.team_id
+      where tt.tournament_id = $1
+        and tp.player_id = $2
+      limit 1;
+      `,
+      [tid, id]
+    );
+
+    if (teamUse.rowCount > 0) {
+      return res.status(409).json({
+        error: "Player is assigned to a team in this tournament.",
+      });
+    }
+
+    await pool.query(
+      `
+      delete from tournament_players
+      where tournament_id = $1 and player_id = $2;
+      `,
+      [tid, id]
+    );
+
+    const stillUsedElsewhere = await pool.query(
+      `
+      select 1
+      from tournament_players
+      where player_id = $1
+      limit 1;
+      `,
+      [id]
+    );
+
+    if (stillUsedElsewhere.rowCount === 0) {
+      const deleted = await pool.query(
+        `
+        delete from players
+        where id = $1
+        returning id;
+        `,
+        [id]
+      );
+
+      if (deleted.rowCount === 0) {
+        return res.status(404).json({ error: `Player not found: ${id}` });
+      }
+    }
+
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("DELETE /api/tournaments/:tid/players/:id error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// POST create a doubles team (exactly 2 players)
+app.post(
+  "/api/tournaments/:tid/teams",
+  requireAuth,
+  requireRole("admin"),
+  requireRegistrationUnlocked,
+  async (req, res) => {
+    const tid = Number(req.params.tid);
+    const playerAId = Number(req.body.playerAId);
+    const playerBId = Number(req.body.playerBId);
+    const requestedName = (req.body.teamName ?? "").toString().trim();
+
+    if (!Number.isInteger(tid) || tid <= 0) {
+      return res.status(400).json({ error: "Invalid tournament id." });
+    }
+    if (!Number.isInteger(playerAId) || !Number.isInteger(playerBId)) {
+      return res
+        .status(400)
+        .json({ error: "playerAId and playerBId are required." });
+    }
+    if (playerAId === playerBId) {
+      return res.status(400).json({ error: "Pick two different players." });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const inTournament = await client.query(
+        `
       select count(*)::int as c
       from tournament_players
       where tournament_id = $1
         and player_id in ($2, $3);
       `,
-      [tid, playerAId, playerBId]
-    );
+        [tid, playerAId, playerBId]
+      );
 
-    if (inTournament.rows?.[0]?.c !== 2) {
-      throw new Error("Both players must be signed up for this tournament.");
-    }
+      if (inTournament.rows?.[0]?.c !== 2) {
+        throw new Error("Both players must be signed up for this tournament.");
+      }
 
-    const alreadyOnTeam = await client.query(
-      `
+      const alreadyOnTeam = await client.query(
+        `
       select tp.player_id
       from team_players tp
       join tournament_teams tt on tt.team_id = tp.team_id
@@ -807,53 +1002,54 @@ app.post("/api/tournaments/:tid/teams", async (req, res) => {
         and tp.player_id in ($2, $3)
       limit 1;
       `,
-      [tid, playerAId, playerBId]
-    );
-    if (alreadyOnTeam.rowCount > 0) {
-      throw new Error(
-        "One of those players is already on a team in this tournament."
+        [tid, playerAId, playerBId]
       );
-    }
+      if (alreadyOnTeam.rowCount > 0) {
+        throw new Error(
+          "One of those players is already on a team in this tournament."
+        );
+      }
 
-    let finalName = requestedName;
-    if (!finalName) {
-      const n = await client.query(
-        `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
-        [tid]
+      let finalName = requestedName;
+      if (!finalName) {
+        const n = await client.query(
+          `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
+          [tid]
+        );
+        finalName = `SPD-${tid}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
+      }
+
+      const teamRow = await client.query(
+        `insert into teams(name) values ($1) returning id, name;`,
+        [finalName]
       );
-      finalName = `SPD-${tid}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
+      const teamId = teamRow.rows[0].id;
+
+      await client.query(
+        `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
+        [teamId, playerAId, playerBId]
+      );
+
+      await client.query(
+        `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
+        [tid, teamId]
+      );
+
+      await client.query("COMMIT");
+      res.json({
+        ok: true,
+        tournamentId: tid,
+        team: { id: teamId, name: finalName },
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("POST /api/tournaments/:tid/teams error:", err);
+      res.status(400).json({ error: errToMessage(err) });
+    } finally {
+      client.release();
     }
-
-    const teamRow = await client.query(
-      `insert into teams(name) values ($1) returning id, name;`,
-      [finalName]
-    );
-    const teamId = teamRow.rows[0].id;
-
-    await client.query(
-      `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
-      [teamId, playerAId, playerBId]
-    );
-
-    await client.query(
-      `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
-      [tid, teamId]
-    );
-
-    await client.query("COMMIT");
-    res.json({
-      ok: true,
-      tournamentId: tid,
-      team: { id: teamId, name: finalName },
-    });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("POST /api/tournaments/:tid/teams error:", err);
-    res.status(400).json({ error: errToMessage(err) });
-  } finally {
-    client.release();
   }
-});
+);
 
 /* -----------------------------
    Tournament State + Match Endpoints
@@ -1268,41 +1464,46 @@ app.post("/api/players", async (req, res) => {
   }
 });
 
-app.patch("/api/players/:id", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id))
-      return res.status(400).json({ error: "Invalid player id." });
+app.patch(
+  "/api/players/:id",
+  requireAuth,
+  requireRegistrationUnlocked,
+  requirePlayerOwnerOrAdmin,
+  async (req, res) => {
+    try {
+      const tournamentId = await resolveTournamentId(req);
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id))
+        return res.status(400).json({ error: "Invalid player id." });
 
-    const name =
-      req.body.name === undefined
-        ? undefined
-        : (req.body.name ?? "").toString().trim();
-    const email =
-      req.body.email === undefined
-        ? undefined
-        : (req.body.email ?? "").toString().trim();
-    const dupr =
-      req.body.duprRating === undefined
-        ? undefined
-        : parseDupr(req.body.duprRating);
+      const name =
+        req.body.name === undefined
+          ? undefined
+          : (req.body.name ?? "").toString().trim();
+      const email =
+        req.body.email === undefined
+          ? undefined
+          : (req.body.email ?? "").toString().trim();
+      const dupr =
+        req.body.duprRating === undefined
+          ? undefined
+          : parseDupr(req.body.duprRating);
 
-    if (name !== undefined && !name)
-      return res.status(400).json({ error: "Name cannot be empty." });
-    if (dupr !== undefined && Number.isNaN(dupr))
-      return res.status(400).json({ error: "DUPR must be a number." });
-    if (dupr !== undefined && dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res
-        .status(400)
-        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
-    }
+      if (name !== undefined && !name)
+        return res.status(400).json({ error: "Name cannot be empty." });
+      if (dupr !== undefined && Number.isNaN(dupr))
+        return res.status(400).json({ error: "DUPR must be a number." });
+      if (dupr !== undefined && dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
+        return res
+          .status(400)
+          .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
+      }
 
-    const duprParam = dupr === undefined ? null : dupr;
-    const nameParam = name === undefined ? null : name;
-    const emailParam = email === undefined ? null : email || null;
+      const duprParam = dupr === undefined ? null : dupr;
+      const nameParam = name === undefined ? null : name;
+      const emailParam = email === undefined ? null : email || null;
 
-    const withT2 = `
+      const withT2 = `
       update players
       set
         name = coalesce($1, name),
@@ -1311,7 +1512,7 @@ app.patch("/api/players/:id", async (req, res) => {
       where tournament_id = $4 and id = $5
       returning id, name, email, dupr_rating as "duprRating";
     `;
-    const withoutT2 = `
+      const withoutT2 = `
       update players
       set
         name = coalesce($1, name),
@@ -1321,23 +1522,24 @@ app.patch("/api/players/:id", async (req, res) => {
       returning id, name, email, dupr_rating as "duprRating";
     `;
 
-    const updated = await queryPlayersScoped(
-      withT2,
-      [nameParam, emailParam, duprParam, tournamentId, id],
-      withoutT2,
-      [nameParam, emailParam, duprParam, id]
-    );
+      const updated = await queryPlayersScoped(
+        withT2,
+        [nameParam, emailParam, duprParam, tournamentId, id],
+        withoutT2,
+        [nameParam, emailParam, duprParam, id]
+      );
 
-    if (updated.rowCount === 0)
-      return res.status(404).json({ error: `Player not found: ${id}` });
+      if (updated.rowCount === 0)
+        return res.status(404).json({ error: `Player not found: ${id}` });
 
-    const p = updated.rows[0];
-    res.json({ ...p, duprTier: duprLabel(p.duprRating) });
-  } catch (err) {
-    console.error("PATCH /api/players/:id error:", err);
-    res.status(500).json({ error: errToMessage(err) });
+      const p = updated.rows[0];
+      res.json({ ...p, duprTier: duprLabel(p.duprRating) });
+    } catch (err) {
+      console.error("PATCH /api/players/:id error:", err);
+      res.status(500).json({ error: errToMessage(err) });
+    }
   }
-});
+);
 
 app.delete("/api/players/:id", async (req, res) => {
   try {

@@ -23,6 +23,7 @@ import {
   LogOut,
   ChevronDown,
   Settings,
+  MapPin,
 } from "lucide-react";
 
 import heroImg from "./assets/pickleball-court.png";
@@ -432,6 +433,22 @@ export default function App({ user, setUser }) {
                   >
                     <Settings size={18} style={{ marginRight: 8 }} />
                     Manage Tournament
+                  </Button>
+
+                  <Button
+                    w="full"
+                    bg="club.900"
+                    color="white"
+                    _hover={{ bg: "club.800" }}
+                    onClick={() =>
+                      selectedTid
+                        ? navigate(`/tournaments/${selectedTid}/info`)
+                        : null
+                    }
+                    disabled={!selectedTid}
+                  >
+                    <MapPin size={18} style={{ marginRight: 8 }} />
+                    Tournament Info
                   </Button>
                 </Stack>
 

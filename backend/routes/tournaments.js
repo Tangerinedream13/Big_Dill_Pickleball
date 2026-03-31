@@ -77,7 +77,11 @@ router.get("/:id/info", async (req, res) => {
         details,
         parking_info as "parkingInfo",
         check_in_info as "checkInInfo",
-        contact_email as "contactEmail"
+        contact_email as "contactEmail",
+        is_public as "isPublic",
+        show_player_names_public as "showPlayerNamesPublic",
+        show_dupr_public as "showDuprPublic",
+        use_aliases_public as "useAliasesPublic"
       from tournaments
       where id = $1
       limit 1;
@@ -115,6 +119,10 @@ router.patch("/:id/info", async (req, res) => {
       parkingInfo,
       checkInInfo,
       contactEmail,
+      isPublic,
+      showPlayerNamesPublic,
+      showDuprPublic,
+      useAliasesPublic,
     } = req.body ?? {};
 
     const updated = await pool.query(
@@ -130,8 +138,12 @@ router.patch("/:id/info", async (req, res) => {
         details = coalesce($7, details),
         parking_info = coalesce($8, parking_info),
         check_in_info = coalesce($9, check_in_info),
-        contact_email = coalesce($10, contact_email)
-      where id = $11
+        contact_email = coalesce($10, contact_email),
+        is_public = coalesce($11, is_public),
+        show_player_names_public = coalesce($12, show_player_names_public),
+        show_dupr_public = coalesce($13, show_dupr_public),
+        use_aliases_public = coalesce($14, use_aliases_public)
+      where id = $15
       returning
         id,
         name,
@@ -143,7 +155,11 @@ router.patch("/:id/info", async (req, res) => {
         details,
         parking_info as "parkingInfo",
         check_in_info as "checkInInfo",
-        contact_email as "contactEmail";
+        contact_email as "contactEmail",
+        is_public as "isPublic",
+        show_player_names_public as "showPlayerNamesPublic",
+        show_dupr_public as "showDuprPublic",
+        use_aliases_public as "useAliasesPublic";
       `,
       [
         name ?? null,
@@ -156,6 +172,10 @@ router.patch("/:id/info", async (req, res) => {
         parkingInfo ?? null,
         checkInInfo ?? null,
         contactEmail ?? null,
+        isPublic ?? null,
+        showPlayerNamesPublic ?? null,
+        showDuprPublic ?? null,
+        useAliasesPublic ?? null,
         tournamentId,
       ]
     );

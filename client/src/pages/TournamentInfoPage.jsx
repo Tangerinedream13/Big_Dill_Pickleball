@@ -11,6 +11,7 @@ import {
   IconButton,
   Card,
   Badge,
+  Switch,
 } from "@chakra-ui/react";
 import {
   Home,
@@ -53,6 +54,29 @@ function InfoRow({ icon, label, value }) {
   );
 }
 
+function SettingRow({ title, help, checked, onChange, disabled = false }) {
+  return (
+    <HStack justify="space-between" align="start" gap={4}>
+      <Box flex="1">
+        <Text fontWeight="700">{title}</Text>
+        <Text fontSize="sm" opacity={0.75}>
+          {help}
+        </Text>
+      </Box>
+
+      <Switch.Root
+        checked={!!checked}
+        onCheckedChange={(e) => onChange(e.checked)}
+        disabled={disabled}
+      >
+        <Switch.HiddenInput />
+        <Switch.Control />
+        <Switch.Label />
+      </Switch.Root>
+    </HStack>
+  );
+}
+
 export default function TournamentInfoPage() {
   usePageTitle("Tournament Info");
 
@@ -62,6 +86,7 @@ export default function TournamentInfoPage() {
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
   const [info, setInfo] = useState(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     async function loadInfo() {
@@ -88,6 +113,34 @@ export default function TournamentInfoPage() {
     if (id) loadInfo();
   }, [id]);
 
+  async function updateVisibilitySetting(key, value) {
+    if (!info?.id) return;
+
+    try {
+      setSavingSettings(true);
+
+      const res = await fetch(`${API_BASE}/api/tournaments/${info.id}/info`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          [key]: value,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Could not update setting.");
+      }
+
+      setInfo(data);
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Could not update setting.");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
       <StickyPageHeader>
@@ -110,6 +163,7 @@ export default function TournamentInfoPage() {
                 <Badge variant="club">Loading…</Badge>
               ) : null}
               {status === "error" ? <Badge variant="club">Error</Badge> : null}
+              {savingSettings ? <Badge variant="pickle">Saving…</Badge> : null}
             </HStack>
 
             <Button variant="outline" onClick={() => navigate(-1)}>
@@ -176,6 +230,54 @@ export default function TournamentInfoPage() {
                     icon={<Mail size={18} />}
                     label="Contact"
                     value={info.contactEmail}
+                  />
+                </Stack>
+              </Card.Body>
+            </Card.Root>
+
+            <Card.Root>
+              <Card.Body>
+                <Stack gap={5}>
+                  <Heading size="md">Public Visibility Settings</Heading>
+
+                  <SettingRow
+                    title="Public tournament page"
+                    help="Controls whether this tournament should be viewable publicly."
+                    checked={info.isPublic}
+                    onChange={(checked) =>
+                      updateVisibilitySetting("isPublic", checked)
+                    }
+                    disabled={savingSettings}
+                  />
+
+                  <SettingRow
+                    title="Show player names publicly"
+                    help="If turned off, public pages should avoid showing real player names."
+                    checked={info.showPlayerNamesPublic}
+                    onChange={(checked) =>
+                      updateVisibilitySetting("showPlayerNamesPublic", checked)
+                    }
+                    disabled={savingSettings}
+                  />
+
+                  <SettingRow
+                    title="Show DUPR publicly"
+                    help="Allows public viewers to see player DUPR ratings."
+                    checked={info.showDuprPublic}
+                    onChange={(checked) =>
+                      updateVisibilitySetting("showDuprPublic", checked)
+                    }
+                    disabled={savingSettings}
+                  />
+
+                  <SettingRow
+                    title="Use aliases publicly"
+                    help="Public pages can show aliases instead of real player names."
+                    checked={info.useAliasesPublic}
+                    onChange={(checked) =>
+                      updateVisibilitySetting("useAliasesPublic", checked)
+                    }
+                    disabled={savingSettings}
                   />
                 </Stack>
               </Card.Body>

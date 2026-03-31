@@ -21,6 +21,7 @@ import {
   Users,
   CalendarDays,
   LogIn,
+  LogOut,
   ChevronDown,
   Settings,
 } from "lucide-react";
@@ -89,11 +90,18 @@ function ActionTile({ icon, title, desc, cta, onClick, disabled = false }) {
   );
 }
 
+function apiUrl(path) {
+  const base = (API_BASE || "").replace(/\/$/, "");
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (!base) return p;
+  return `${base}${p}`;
+}
+
 /* -----------------------------
    App
 ------------------------------ */
 
-export default function App() {
+export default function App({ user, setUser }) {
   usePageTitle("Home");
 
   const navigate = useNavigate();
@@ -101,7 +109,6 @@ export default function App() {
   // silent backend ping
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* -----------------------------
@@ -132,10 +139,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    // Load tournaments once when landing on homepage
     if (tournamentsStatus === "idle") loadTournaments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tournamentsStatus]);
 
   const tournamentCollection = useMemo(
     () =>
@@ -216,9 +221,19 @@ export default function App() {
     }
   }
 
-  /* -----------------------------
-     UI
-  ------------------------------ */
+  async function handleLogout() {
+    try {
+      await fetch(apiUrl("/api/auth/logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUser(null);
+      navigate("/login");
+    }
+  }
 
   const selectedTournamentLabel =
     tournamentCollection.items.find((i) => i.value === String(selectedTid))
@@ -234,7 +249,6 @@ export default function App() {
               direction={{ base: "column", md: "row" }}
               align="stretch"
             >
-              {/* Hero image (DESKTOP ONLY) */}
               <Box
                 display={{ base: "none", md: "block" }}
                 flex="1"
@@ -254,37 +268,56 @@ export default function App() {
                 />
               </Box>
 
-              {/* Main content */}
               <Stack
                 flex="1"
                 gap={{ base: 4, md: 4 }}
                 order={{ base: 1, md: 0 }}
               >
-                <HStack gap={3} align="center" flexWrap="nowrap">
-                  <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
-                    Big Dill Pickleball
-                  </Heading>
+                <HStack justify="space-between" align="start" wrap="wrap">
+                  <HStack gap={3} align="center" flexWrap="nowrap">
+                    <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
+                      Big Dill Pickleball
+                    </Heading>
 
-                  {/* Mobile-only smaller version of the SAME hero image */}
-                  <Box
-                    display={{ base: "block", md: "none" }}
-                    as="img"
-                    src={heroImg}
-                    alt="Pickleball"
-                    h="42px"
-                    w="auto"
-                    objectFit="contain"
-                    flexShrink={0}
-                  />
+                    <Box
+                      display={{ base: "block", md: "none" }}
+                      as="img"
+                      src={heroImg}
+                      alt="Pickleball"
+                      h="42px"
+                      w="auto"
+                      objectFit="contain"
+                      flexShrink={0}
+                    />
 
-                  <Box
-                    display={{ base: "none", sm: "block" }}
-                    w="1px"
-                    h="24px"
-                    bg="border"
-                    opacity={0.6}
-                    mx={2}
-                  />
+                    <Box
+                      display={{ base: "none", sm: "block" }}
+                      w="1px"
+                      h="24px"
+                      bg="border"
+                      opacity={0.6}
+                      mx={2}
+                    />
+                  </HStack>
+
+                  <HStack gap={2} wrap="wrap">
+                    {user ? (
+                      <>
+                        <Text fontSize="sm" opacity={0.85}>
+                          {user.email} ({user.role})
+                        </Text>
+                        <Button variant="outline" onClick={handleLogout}>
+                          <LogOut size={16} style={{ marginRight: 8 }} />
+                          Log Out
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="outline" onClick={() => navigate("/login")}>
+                        <LogIn size={16} style={{ marginRight: 8 }} />
+                        Admin Login
+                      </Button>
+                    )}
+                  </HStack>
                 </HStack>
 
                 <Surface p={{ base: 3, md: 4 }}>
@@ -301,7 +334,6 @@ export default function App() {
                       </Text>
                     ) : null}
 
-                    {/* Ensure the select never overflows */}
                     <Box w="full">
                       <Select.Root
                         collection={tournamentCollection}
@@ -344,7 +376,6 @@ export default function App() {
                   </Stack>
                 </Surface>
 
-                {/* Buttons */}
                 <Stack direction="column" gap={3} align="stretch">
                   <Button
                     w="full"
@@ -362,7 +393,9 @@ export default function App() {
                     bg="club.900"
                     color="white"
                     _hover={{ bg: "club.800" }}
-                    onClick={() => navigate("/tournaments/new")}
+                    onClick={() =>
+                      user ? navigate("/tournaments/new") : navigate("/login")
+                    }
                   >
                     <Settings size={18} style={{ marginRight: 8 }} />
                     Manage Tournament
@@ -436,6 +469,7 @@ export default function App() {
               </Stack>
             </Flex>
           </Surface>
+
           <Grid
             templateColumns={{
               base: "1fr",

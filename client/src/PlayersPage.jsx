@@ -447,6 +447,7 @@ export default function PlayersPage() {
       const res = await fetch(apiUrl(`/api/tournaments/${tid}/teams`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           playerAId: Number(teamAId),
           playerBId: Number(teamBId),
@@ -503,6 +504,7 @@ export default function PlayersPage() {
       const res = await fetch(withTid(`/api/teams/${teamId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ name, tournamentId: Number(tid) }),
       });
       const data = await res.json().catch(() => ({}));
@@ -532,6 +534,7 @@ export default function PlayersPage() {
     try {
       const res = await fetch(withTid(`/api/teams/${teamId}`), {
         method: "DELETE",
+        credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Could not delete team.");

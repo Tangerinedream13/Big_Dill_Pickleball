@@ -1,4 +1,3 @@
-// client/src/App.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -97,6 +96,16 @@ function apiUrl(path) {
   return `${base}${p}`;
 }
 
+const selfRatingCollection = createListCollection({
+  items: [
+    { label: "Beginner / New to pickleball", value: "beginner" },
+    { label: "Lower Intermediate", value: "lower_intermediate" },
+    { label: "Intermediate", value: "intermediate" },
+    { label: "Advanced", value: "advanced" },
+    { label: "Very Advanced / Tournament player", value: "very_advanced" },
+  ],
+});
+
 /* -----------------------------
    App
 ------------------------------ */
@@ -106,7 +115,6 @@ export default function App({ user, setUser }) {
 
   const navigate = useNavigate();
 
-  // silent backend ping
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
   }, []);
@@ -170,13 +178,19 @@ export default function App({ user, setUser }) {
   const [joinName, setJoinName] = useState("");
   const [joinEmail, setJoinEmail] = useState("");
   const [joinDupr, setJoinDupr] = useState("");
+  const [joinSelfRating, setJoinSelfRating] = useState("");
   const [joinStatus, setJoinStatus] = useState("idle");
   const [joinError, setJoinError] = useState("");
 
   const isSubmitting = joinStatus === "saving";
+  const needsSelfRating = joinDupr.trim() === "";
 
   const canJoinSubmit =
-    joinName.trim() && joinEmail.includes("@") && selectedTid && !isSubmitting;
+    joinName.trim() &&
+    joinEmail.includes("@") &&
+    selectedTid &&
+    !isSubmitting &&
+    (!needsSelfRating || !!joinSelfRating);
 
   async function submitJoin(e) {
     e.preventDefault();
@@ -187,6 +201,7 @@ export default function App({ user, setUser }) {
       name: joinName.trim(),
       email: joinEmail.trim().toLowerCase(),
       duprRating: joinDupr.trim(),
+      selfRating: joinDupr.trim() === "" ? joinSelfRating : null,
     };
 
     try {
@@ -207,7 +222,9 @@ export default function App({ user, setUser }) {
         tournamentId: selectedTid,
         name: payload.name,
         email: payload.email,
-        duprRating: payload.duprRating || "—",
+        duprRating: data?.duprRating ?? payload.duprRating ?? "—",
+        selfRating: data?.selfRating ?? payload.selfRating ?? null,
+        skillSource: data?.skillSource ?? (payload.duprRating ? "dupr" : "self_rating"),
         _optimistic: true,
       });
 
@@ -432,12 +449,47 @@ export default function App({ user, setUser }) {
                           disabled={isSubmitting}
                         />
 
-                        <Input
-                          placeholder="DUPR (optional)"
-                          value={joinDupr}
-                          onChange={(e) => setJoinDupr(e.target.value)}
-                          disabled={isSubmitting}
-                        />
+                        <Stack gap={2}>
+                          <Input
+                            placeholder="DUPR (optional)"
+                            value={joinDupr}
+                            onChange={(e) => setJoinDupr(e.target.value)}
+                            disabled={isSubmitting}
+                          />
+                          <Text fontSize="xs" opacity={0.7}>
+                            If you don’t know your DUPR, leave it blank and choose a skill level below.
+                          </Text>
+                        </Stack>
+
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Skill level {needsSelfRating ? "(required if DUPR is blank)" : "(optional)"}
+                          </Text>
+
+                          <Select.Root
+                            collection={selfRatingCollection}
+                            value={joinSelfRating ? [joinSelfRating] : []}
+                            onValueChange={(d) =>
+                              setJoinSelfRating(d.value?.[0] ?? "")
+                            }
+                            disabled={isSubmitting}
+                          >
+                            <Select.Trigger>
+                              <Select.ValueText placeholder="Choose your skill level" />
+                            </Select.Trigger>
+                            <Select.Content>
+                              {selfRatingCollection.items.map((item) => (
+                                <Select.Item key={item.value} item={item}>
+                                  {item.label}
+                                </Select.Item>
+                              ))}
+                            </Select.Content>
+                          </Select.Root>
+
+                          <Text fontSize="xs" opacity={0.7}>
+                            This helps us create fairer matchups if you do not have an official DUPR.
+                          </Text>
+                        </Stack>
 
                         <HStack
                           justify={{ base: "stretch", sm: "flex-end" }}

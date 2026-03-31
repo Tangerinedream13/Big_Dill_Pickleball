@@ -24,6 +24,19 @@ import { API_BASE } from "../apiBase";
 import usePageTitle from "../hooks/usePageTitle";
 import StickyPageHeader from "../components/StickyPageHeader";
 
+function formatEventDate(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function InfoRow({ icon, label, value }) {
   if (!value) return null;
 
@@ -134,7 +147,7 @@ export default function TournamentInfoPage() {
                   <InfoRow
                     icon={<CalendarDays size={18} />}
                     label="Date"
-                    value={info.eventDate}
+                    value={formatEventDate(info.eventDate)}
                   />
 
                   <InfoRow

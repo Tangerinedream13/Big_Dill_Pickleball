@@ -47,9 +47,10 @@ export default function LoginPage({ onLogin }) {
       });
 
       const data = await res.json().catch(() => ({}));
+      console.log("login response:", res.status, data);
 
       if (!res.ok) {
-        throw new Error(data?.error || "Login failed.");
+        throw new Error(data?.error || `Login failed (${res.status})`);
       }
 
       if (onLogin) {
@@ -131,11 +132,7 @@ export default function LoginPage({ onLogin }) {
                   </Box>
                 ) : null}
 
-                <Button
-                  type="submit"
-                  variant="pickle"
-                  disabled={!canSubmit}
-                >
+                <Button type="submit" variant="pickle" disabled={!canSubmit}>
                   <LogIn size={16} style={{ marginRight: 8 }} />
                   {isSaving ? "Logging in..." : "Log In"}
                 </Button>

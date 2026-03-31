@@ -1,14 +1,50 @@
-// backend/routes/signup.js
 const express = require("express");
 
 module.exports = (pool) => {
   const router = express.Router();
+
+  const SELF_RATING_TO_DUPR = {
+    beginner: 2.5,
+    lower_intermediate: 3.0,
+    intermediate: 3.5,
+    advanced: 4.0,
+    very_advanced: 4.5,
+  };
 
   function parseDupr(v) {
     if (v === null || v === undefined || v === "") return null;
     const num = Number(v);
     if (!Number.isFinite(num)) return NaN;
     return Math.round(num * 100) / 100;
+  }
+
+  function normalizeSelfRating(v) {
+    const s = (v ?? "").toString().trim().toLowerCase();
+    return s || null;
+  }
+
+  function deriveSkillFields({ dupr, selfRating }) {
+    if (dupr !== null) {
+      return {
+        duprRating: dupr,
+        selfRating: null,
+        skillSource: "dupr",
+      };
+    }
+
+    const normalized = normalizeSelfRating(selfRating);
+    if (!normalized || !(normalized in SELF_RATING_TO_DUPR)) {
+      return {
+        error:
+          "If DUPR is blank, choose a self-rating: beginner, lower_intermediate, intermediate, advanced, or very_advanced.",
+      };
+    }
+
+    return {
+      duprRating: SELF_RATING_TO_DUPR[normalized],
+      selfRating: normalized,
+      skillSource: "self_rating",
+    };
   }
 
   function duprLabel(dupr) {
@@ -34,6 +70,7 @@ module.exports = (pool) => {
     const name = (req.body?.name ?? "").toString().trim();
     const email = (req.body?.email ?? "").toString().trim().toLowerCase();
     const dupr = parseDupr(req.body?.duprRating);
+    const selfRating = req.body?.selfRating;
 
     if (!name) return res.status(400).json({ error: "Name is required." });
     if (!email || !email.includes("@")) {
@@ -43,14 +80,24 @@ module.exports = (pool) => {
       return res.status(400).json({ error: "DUPR must be a number." });
     }
 
+    const skill = deriveSkillFields({ dupr, selfRating });
+    if (skill.error) {
+      return res.status(400).json({ error: skill.error });
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      // 1) Find existing player by email (case-insensitive)
       const found = await client.query(
         `
-        select id, name, email, dupr_rating as "duprRating"
+        select
+          id,
+          name,
+          email,
+          dupr_rating as "duprRating",
+          self_rating as "selfRating",
+          skill_source as "skillSource"
         from players
         where lower(email) = $1
         limit 1;
@@ -61,33 +108,50 @@ module.exports = (pool) => {
       let player;
 
       if (found.rowCount > 0) {
-        // Optional: keep player info updated to latest signup values
         const updated = await client.query(
           `
           update players
           set
             name = $1,
-            dupr_rating = $2
-          where id = $3
-          returning id, name, email, dupr_rating as "duprRating";
+            dupr_rating = $2,
+            self_rating = $3,
+            skill_source = $4
+          where id = $5
+          returning
+            id,
+            name,
+            email,
+            dupr_rating as "duprRating",
+            self_rating as "selfRating",
+            skill_source as "skillSource";
           `,
-          [name, dupr, found.rows[0].id]
+          [
+            name,
+            skill.duprRating,
+            skill.selfRating,
+            skill.skillSource,
+            found.rows[0].id,
+          ]
         );
         player = updated.rows[0];
       } else {
         const inserted = await client.query(
           `
-          insert into players (name, email, dupr_rating)
-          values ($1, $2, $3)
-          returning id, name, email, dupr_rating as "duprRating";
+          insert into players (name, email, dupr_rating, self_rating, skill_source)
+          values ($1, $2, $3, $4, $5)
+          returning
+            id,
+            name,
+            email,
+            dupr_rating as "duprRating",
+            self_rating as "selfRating",
+            skill_source as "skillSource";
           `,
-          [name, email, dupr]
+          [name, email, skill.duprRating, skill.selfRating, skill.skillSource]
         );
         player = inserted.rows[0];
       }
 
-      // 2) Link player to this tournament (idempotent)
-      // Assumes a unique constraint on (tournament_id, player_id)
       await client.query(
         `
         insert into tournament_players (tournament_id, player_id)
@@ -115,11 +179,9 @@ module.exports = (pool) => {
 
   /* -----------------------------
      Tournament-scoped Players (admin UI)
-     These keep PlayersPage tournament-scoped and prevent "leakage"
   ------------------------------ */
 
   // POST /api/tournaments/:tid/players
-  // Admin-add a player to a specific tournament (email optional)
   router.post("/tournaments/:tid/players", async (req, res) => {
     const tid = Number(req.params.tid);
     if (!Number.isInteger(tid) || tid <= 0) {
@@ -130,6 +192,7 @@ module.exports = (pool) => {
     const emailRaw = (req.body?.email ?? "").toString().trim();
     const email = emailRaw ? emailRaw.toLowerCase() : null;
     const dupr = parseDupr(req.body?.duprRating);
+    const selfRating = req.body?.selfRating;
 
     if (!name) return res.status(400).json({ error: "Name is required." });
     if (email && !email.includes("@")) {
@@ -141,6 +204,11 @@ module.exports = (pool) => {
       return res.status(400).json({ error: "DUPR must be a number." });
     }
 
+    const skill = deriveSkillFields({ dupr, selfRating });
+    if (skill.error) {
+      return res.status(400).json({ error: skill.error });
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -148,10 +216,15 @@ module.exports = (pool) => {
       let player;
 
       if (email) {
-        // De-dupe by email (same behavior as signup)
         const found = await client.query(
           `
-          select id, name, email, dupr_rating as "duprRating"
+          select
+            id,
+            name,
+            email,
+            dupr_rating as "duprRating",
+            self_rating as "selfRating",
+            skill_source as "skillSource"
           from players
           where lower(email) = $1
           limit 1;
@@ -163,39 +236,64 @@ module.exports = (pool) => {
           const updated = await client.query(
             `
             update players
-            set name = $1,
-                dupr_rating = $2
-            where id = $3
-            returning id, name, email, dupr_rating as "duprRating";
+            set
+              name = $1,
+              dupr_rating = $2,
+              self_rating = $3,
+              skill_source = $4
+            where id = $5
+            returning
+              id,
+              name,
+              email,
+              dupr_rating as "duprRating",
+              self_rating as "selfRating",
+              skill_source as "skillSource";
             `,
-            [name, dupr, found.rows[0].id]
+            [
+              name,
+              skill.duprRating,
+              skill.selfRating,
+              skill.skillSource,
+              found.rows[0].id,
+            ]
           );
           player = updated.rows[0];
         } else {
           const inserted = await client.query(
             `
-            insert into players (name, email, dupr_rating)
-            values ($1, $2, $3)
-            returning id, name, email, dupr_rating as "duprRating";
+            insert into players (name, email, dupr_rating, self_rating, skill_source)
+            values ($1, $2, $3, $4, $5)
+            returning
+              id,
+              name,
+              email,
+              dupr_rating as "duprRating",
+              self_rating as "selfRating",
+              skill_source as "skillSource";
             `,
-            [name, email, dupr]
+            [name, email, skill.duprRating, skill.selfRating, skill.skillSource]
           );
           player = inserted.rows[0];
         }
       } else {
-        // No email -> create a new player record
         const inserted = await client.query(
           `
-          insert into players (name, email, dupr_rating)
-          values ($1, null, $2)
-          returning id, name, email, dupr_rating as "duprRating";
+          insert into players (name, email, dupr_rating, self_rating, skill_source)
+          values ($1, null, $2, $3, $4)
+          returning
+            id,
+            name,
+            email,
+            dupr_rating as "duprRating",
+            self_rating as "selfRating",
+            skill_source as "skillSource";
           `,
-          [name, dupr]
+          [name, skill.duprRating, skill.selfRating, skill.skillSource]
         );
         player = inserted.rows[0];
       }
 
-      // Link to this tournament (idempotent)
       await client.query(
         `
         insert into tournament_players (tournament_id, player_id)
@@ -222,7 +320,6 @@ module.exports = (pool) => {
   });
 
   // DELETE /api/tournaments/:tid/players/:pid
-  // Removes a player from THIS tournament only (does NOT delete the global player record)
   router.delete("/tournaments/:tid/players/:pid", async (req, res) => {
     const tid = Number(req.params.tid);
     const pid = Number(req.params.pid);
@@ -238,7 +335,6 @@ module.exports = (pool) => {
     try {
       await client.query("BEGIN");
 
-      // Safety: block if player is currently on a team in this tournament
       const inTeam = await client.query(
         `
         select 1

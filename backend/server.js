@@ -525,7 +525,9 @@ app.post("/api/playoffs/generate", async (req, res) => {
     }
 
     const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, ["RR"]);
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
 
     const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
     if (rrIncomplete.length > 0) {
@@ -822,56 +824,6 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
   } catch (err) {
     console.error("GET /api/tournaments/:tid/players error:", err);
     res.status(500).json({ error: errToMessage(err) });
-  }
-});
-
-app.post("/api/tournaments/:tid/players", async (req, res) => {
-  try {
-    const tid = Number(req.params.tid);
-    if (!Number.isInteger(tid) || tid <= 0) {
-      return res.status(400).json({ error: "Invalid tournament id." });
-    }
-
-    const name = (req.body.name ?? "").toString().trim();
-    const email = (req.body.email ?? "").toString().trim() || null;
-    const dupr = parseDupr(req.body.duprRating);
-
-    if (!name) return res.status(400).json({ error: "Name is required." });
-    if (Number.isNaN(dupr)) {
-      return res.status(400).json({ error: "DUPR must be a number." });
-    }
-    if (dupr !== null && (dupr < 2.0 || dupr > 6.99)) {
-      return res
-        .status(400)
-        .json({ error: "DUPR must be between 2.00 and 6.99 (or blank)." });
-    }
-
-    const inserted = await pool.query(
-      `
-      insert into players (name, email, dupr_rating)
-      values ($1, $2, $3)
-      returning id, name, email, dupr_rating as "duprRating";
-      `,
-      [name, email, dupr]
-    );
-
-    const player = inserted.rows[0];
-
-    await pool.query(
-      `
-      insert into tournament_players (tournament_id, player_id)
-      values ($1, $2);
-      `,
-      [tid, player.id]
-    );
-
-    return res.status(201).json({
-      ...player,
-      duprTier: duprLabel(player.duprRating),
-    });
-  } catch (err) {
-    console.error("POST /api/tournaments/:tid/players error:", err);
-    return res.status(500).json({ error: errToMessage(err) });
   }
 });
 

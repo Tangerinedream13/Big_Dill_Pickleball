@@ -433,6 +433,20 @@ export default function App({ user, setUser }) {
                     <Settings size={18} style={{ marginRight: 8 }} />
                     Manage Tournament
                   </Button>
+
+                  <Button
+                    w="full"
+                    variant="outline"
+                    onClick={() =>
+                      selectedTid
+                        ? navigate(`/tournaments/${selectedTid}/info`)
+                        : null
+                    }
+                    disabled={!selectedTid}
+                  >
+                    <CalendarDays size={18} style={{ marginRight: 8 }} />
+                    Tournament Info
+                  </Button>
                 </Stack>
 
                 {joinOpen && (

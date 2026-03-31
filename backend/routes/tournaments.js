@@ -1,4 +1,3 @@
-// backend/routes/tournaments.js
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
@@ -57,6 +56,121 @@ router.post("/", async (req, res) => {
   }
 });
 
+// GET /api/tournaments/:id/info
+router.get("/:id/info", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      select
+        id,
+        name,
+        event_date as "eventDate",
+        start_time as "startTime",
+        end_time as "endTime",
+        location_name as "locationName",
+        address,
+        details,
+        parking_info as "parkingInfo",
+        check_in_info as "checkInInfo",
+        contact_email as "contactEmail"
+      from tournaments
+      where id = $1
+      limit 1;
+      `,
+      [tournamentId]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "Tournament not found." });
+    }
+
+    return res.json(r.rows[0]);
+  } catch (err) {
+    console.error("GET /api/tournaments/:id/info error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+// PATCH /api/tournaments/:id/info
+router.patch("/:id/info", async (req, res) => {
+  const tournamentId = parseId(req.params.id);
+  if (!tournamentId) {
+    return res.status(400).json({ error: "Invalid tournament id." });
+  }
+
+  try {
+    const {
+      name,
+      eventDate,
+      startTime,
+      endTime,
+      locationName,
+      address,
+      details,
+      parkingInfo,
+      checkInInfo,
+      contactEmail,
+    } = req.body ?? {};
+
+    const updated = await pool.query(
+      `
+      update tournaments
+      set
+        name = coalesce($1, name),
+        event_date = coalesce($2, event_date),
+        start_time = coalesce($3, start_time),
+        end_time = coalesce($4, end_time),
+        location_name = coalesce($5, location_name),
+        address = coalesce($6, address),
+        details = coalesce($7, details),
+        parking_info = coalesce($8, parking_info),
+        check_in_info = coalesce($9, check_in_info),
+        contact_email = coalesce($10, contact_email)
+      where id = $11
+      returning
+        id,
+        name,
+        event_date as "eventDate",
+        start_time as "startTime",
+        end_time as "endTime",
+        location_name as "locationName",
+        address,
+        details,
+        parking_info as "parkingInfo",
+        check_in_info as "checkInInfo",
+        contact_email as "contactEmail";
+      `,
+      [
+        name ?? null,
+        eventDate ?? null,
+        startTime ?? null,
+        endTime ?? null,
+        locationName ?? null,
+        address ?? null,
+        details ?? null,
+        parkingInfo ?? null,
+        checkInInfo ?? null,
+        contactEmail ?? null,
+        tournamentId,
+      ]
+    );
+
+    if (updated.rowCount === 0) {
+      return res.status(404).json({ error: "Tournament not found." });
+    }
+
+    return res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("PATCH /api/tournaments/:id/info error:", err);
+    return res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
 // DELETE /api/tournaments/:id
 // Deletes the tournament and tournament-scoped data.
 // If tournament doesn't exist -> 404
@@ -71,7 +185,6 @@ router.delete("/:id", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Ensure tournament exists first so we can return a clean 404
     const exists = await client.query(
       `select id from tournaments where id = $1;`,
       [tournamentId]
@@ -85,25 +198,21 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    // Delete matches first
     await client.query(`delete from matches where tournament_id = $1;`, [
       tournamentId,
     ]);
 
-    // Get team IDs linked to this tournament
     const teamIdsRes = await client.query(
       `select team_id from tournament_teams where tournament_id = $1;`,
       [tournamentId]
     );
     const teamIds = teamIdsRes.rows.map((r) => r.team_id);
 
-    // Remove tournament -> team links
     await client.query(
       `delete from tournament_teams where tournament_id = $1;`,
       [tournamentId]
     );
 
-    // Remove team players + teams (if any exist)
     if (teamIds.length) {
       await client.query(
         `delete from team_players where team_id = any($1::int[]);`,
@@ -114,13 +223,11 @@ router.delete("/:id", async (req, res) => {
       ]);
     }
 
-    // Remove tournament player links
     await client.query(
       `delete from tournament_players where tournament_id = $1;`,
       [tournamentId]
     );
 
-    // Delete the tournament row
     await client.query(`delete from tournaments where id = $1;`, [
       tournamentId,
     ]);
@@ -207,7 +314,6 @@ router.post("/:id/teams", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Guard: both players must be in this tournament
     const inTournament = await client.query(
       `
       select count(*)::int as c
@@ -222,7 +328,6 @@ router.post("/:id/teams", async (req, res) => {
       throw new Error("Both players must be signed up for this tournament.");
     }
 
-    // Guard: neither player can already be on a team in this tournament
     const alreadyOnTeam = await client.query(
       `
       select tp.player_id
@@ -241,7 +346,6 @@ router.post("/:id/teams", async (req, res) => {
       );
     }
 
-    // Auto-name if not provided
     let finalName = requestedName;
     if (!finalName) {
       const n = await client.query(
@@ -251,20 +355,17 @@ router.post("/:id/teams", async (req, res) => {
       finalName = `T-${tournamentId}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
     }
 
-    // Create team
     const teamRow = await client.query(
       `insert into teams(name) values ($1) returning id, name;`,
       [finalName]
     );
     const teamId = teamRow.rows[0].id;
 
-    // Link players to team
     await client.query(
       `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
       [teamId, playerAId, playerBId]
     );
 
-    // Add team to tournament
     await client.query(
       `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
       [tournamentId, teamId]
@@ -299,18 +400,15 @@ router.delete("/:id/teams/:teamId", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Remove link to tournament
     await client.query(
       `delete from tournament_teams where tournament_id = $1 and team_id = $2;`,
       [tournamentId, teamId]
     );
 
-    // Remove team players
     await client.query(`delete from team_players where team_id = $1;`, [
       teamId,
     ]);
 
-    // Remove team (safe if teams are only used in one tournament)
     await client.query(`delete from teams where id = $1;`, [teamId]);
 
     await client.query("COMMIT");

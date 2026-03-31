@@ -797,6 +797,8 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
         p.name,
         p.email,
         p.dupr_rating as "duprRating",
+        p.self_rating as "selfRating",
+        p.skill_source as "skillSource",
         exists (
           select 1
           from team_players tp

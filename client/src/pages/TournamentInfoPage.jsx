@@ -27,8 +27,27 @@ import StickyPageHeader from "../components/StickyPageHeader";
 function formatEventDate(value) {
   if (!value) return "";
 
-  const [year, month, day] = String(value).split("-").map(Number);
-  const d = new Date(year, month - 1, day);
+  const raw = String(value);
+
+  // If it starts with YYYY-MM-DD, pull just that part
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+
+    const d = new Date(year, month - 1, day);
+
+    return d.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "Invalid Date";
 
   return d.toLocaleDateString("en-US", {
     weekday: "long",

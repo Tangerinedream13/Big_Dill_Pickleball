@@ -26,8 +26,9 @@ import StickyPageHeader from "../components/StickyPageHeader";
 
 function formatEventDate(value) {
   if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
+
+  const [year, month, day] = String(value).split("-").map(Number);
+  const d = new Date(year, month - 1, day);
 
   return d.toLocaleDateString("en-US", {
     weekday: "long",

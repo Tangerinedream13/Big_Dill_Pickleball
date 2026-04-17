@@ -16,6 +16,7 @@ import {
   Text,
   Dialog,
   Portal,
+  Switch,
 } from "@chakra-ui/react";
 import { PlusCircle, Trophy, Trash2, Pencil, Home } from "lucide-react";
 import {
@@ -37,6 +38,12 @@ function CreateTournament() {
 
   const [currentTid, setCurrentTid] = useState(getCurrentTournamentId());
 
+  // Public visibility settings
+  const [isPublic, setIsPublic] = useState(true);
+  const [showPlayerNamesPublic, setShowPlayerNamesPublic] = useState(true);
+  const [showDuprPublic, setShowDuprPublic] = useState(false);
+  const [useAliasesPublic, setUseAliasesPublic] = useState(false);
+
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === "currentTournamentId") {
@@ -48,7 +55,7 @@ function CreateTournament() {
   }, []);
 
   // existing tournaments list
-  const [listStatus, setListStatus] = useState("idle"); // idle | loading | ok | error
+  const [listStatus, setListStatus] = useState("idle");
   const [listError, setListError] = useState("");
   const [tournaments, setTournaments] = useState([]);
 
@@ -56,15 +63,15 @@ function CreateTournament() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameId, setRenameId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
-  const [renameStatus, setRenameStatus] = useState("idle"); // idle | saving | error
+  const [renameStatus, setRenameStatus] = useState("idle");
   const [renameError, setRenameError] = useState("");
 
-  // delete modal (safe confirm)
+  // delete modal
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [deleteName, setDeleteName] = useState("");
   const [deleteTyped, setDeleteTyped] = useState("");
-  const [deleteStatus, setDeleteStatus] = useState("idle"); // idle | deleting | error
+  const [deleteStatus, setDeleteStatus] = useState("idle");
   const [deleteError, setDeleteError] = useState("");
 
   const canSubmit = useMemo(
@@ -133,6 +140,10 @@ function CreateTournament() {
         body: JSON.stringify({
           name: trimmed,
           ...(gptNum === null ? {} : { gamesPerTeam: gptNum }),
+          isPublic,
+          showPlayerNamesPublic,
+          showDuprPublic,
+          useAliasesPublic,
         }),
       });
 
@@ -150,6 +161,10 @@ function CreateTournament() {
 
       setName("");
       setGamesPerTeam("4");
+      setIsPublic(true);
+      setShowPlayerNamesPublic(true);
+      setShowDuprPublic(false);
+      setUseAliasesPublic(false);
       setStatus("ok");
 
       await loadTournaments();
@@ -307,7 +322,6 @@ function CreateTournament() {
 
       <Container maxW="6xl" pt={{ base: 8, md: 10 }}>
         <Stack gap={6}>
-          {/* Create form */}
           <Card.Root>
             <Card.Body>
               <Stack gap={5} as="form" onSubmit={handleCreate}>
@@ -357,6 +371,102 @@ function CreateTournament() {
                   </Stack>
                 </Stack>
 
+                <Card.Root bg="white">
+                  <Card.Body>
+                    <Stack gap={5}>
+                      <Box>
+                        <Heading size="md">Public Visibility Settings</Heading>
+                        <Text mt={1} fontSize="sm" opacity={0.75}>
+                          Control what public players and spectators can see for
+                          this tournament.
+                        </Text>
+                      </Box>
+
+                      <HStack justify="space-between" align="start">
+                        <Box>
+                          <Text fontWeight="700">Public tournament</Text>
+                          <Text fontSize="sm" opacity={0.75}>
+                            Allow public-facing tournament pages to be viewed.
+                          </Text>
+                        </Box>
+                        <Switch.Root
+                          checked={isPublic}
+                          onCheckedChange={(e) => setIsPublic(!!e.checked)}
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control />
+                          <Switch.Label />
+                        </Switch.Root>
+                      </HStack>
+
+                      <HStack justify="space-between" align="start">
+                        <Box>
+                          <Text fontWeight="700">
+                            Show player names publicly
+                          </Text>
+                          <Text fontSize="sm" opacity={0.75}>
+                            If turned off, public pages should hide player names
+                            unless aliases are enabled.
+                          </Text>
+                        </Box>
+                        <Switch.Root
+                          checked={showPlayerNamesPublic}
+                          onCheckedChange={(e) =>
+                            setShowPlayerNamesPublic(!!e.checked)
+                          }
+                          disabled={!isPublic}
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control />
+                          <Switch.Label />
+                        </Switch.Root>
+                      </HStack>
+
+                      <HStack justify="space-between" align="start">
+                        <Box>
+                          <Text fontWeight="700">Show DUPR publicly</Text>
+                          <Text fontSize="sm" opacity={0.75}>
+                            Control whether public pages display player DUPR
+                            ratings.
+                          </Text>
+                        </Box>
+                        <Switch.Root
+                          checked={showDuprPublic}
+                          onCheckedChange={(e) =>
+                            setShowDuprPublic(!!e.checked)
+                          }
+                          disabled={!isPublic}
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control />
+                          <Switch.Label />
+                        </Switch.Root>
+                      </HStack>
+
+                      <HStack justify="space-between" align="start">
+                        <Box>
+                          <Text fontWeight="700">Use aliases publicly</Text>
+                          <Text fontSize="sm" opacity={0.75}>
+                            Show public aliases instead of real player names on
+                            public pages.
+                          </Text>
+                        </Box>
+                        <Switch.Root
+                          checked={useAliasesPublic}
+                          onCheckedChange={(e) =>
+                            setUseAliasesPublic(!!e.checked)
+                          }
+                          disabled={!isPublic}
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control />
+                          <Switch.Label />
+                        </Switch.Root>
+                      </HStack>
+                    </Stack>
+                  </Card.Body>
+                </Card.Root>
+
                 <HStack justify="flex-end" gap={2} pt={2}>
                   <Button variant="outline" onClick={() => navigate("/")}>
                     Cancel
@@ -373,7 +483,6 @@ function CreateTournament() {
             </Card.Body>
           </Card.Root>
 
-          {/* Existing tournaments list */}
           <Card.Root>
             <Card.Body>
               <Flex
@@ -522,7 +631,6 @@ function CreateTournament() {
             </Card.Body>
           </Card.Root>
 
-          {/* Rename Tournament Modal */}
           <Dialog.Root
             open={renameOpen}
             onOpenChange={(e) => setRenameOpen(e.open)}
@@ -587,7 +695,6 @@ function CreateTournament() {
             </Portal>
           </Dialog.Root>
 
-          {/* Delete Tournament Modal (type-to-confirm) */}
           <Dialog.Root
             open={deleteOpen}
             onOpenChange={(e) => setDeleteOpen(e.open)}

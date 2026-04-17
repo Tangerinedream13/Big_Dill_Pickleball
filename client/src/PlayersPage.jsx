@@ -1,4 +1,3 @@
-// client/src/PlayersPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -59,6 +58,28 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+function formatSelfRating(value) {
+  if (!value) return "";
+  const map = {
+    beginner: "Beginner",
+    lower_intermediate: "Lower Intermediate",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+    very_advanced: "Very Advanced",
+  };
+  return map[value] || value;
+}
+
+const selfRatingCollection = createListCollection({
+  items: [
+    { label: "Beginner / New to pickleball", value: "beginner" },
+    { label: "Lower Intermediate", value: "lower_intermediate" },
+    { label: "Intermediate", value: "intermediate" },
+    { label: "Advanced", value: "advanced" },
+    { label: "Very Advanced / Tournament player", value: "very_advanced" },
+  ],
+});
+
 function PlayersCardList({ players, onDelete, playerTeamMap }) {
   return (
     <Stack gap={3}>
@@ -66,6 +87,8 @@ function PlayersCardList({ players, onDelete, playerTeamMap }) {
         const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
         const teamName = playerTeamMap?.get(String(p.id)) ?? "";
+        const selfRating = p.selfRating ?? p.self_rating ?? "";
+        const skillSource = p.skillSource ?? p.skill_source ?? "";
 
         return (
           <Box
@@ -90,6 +113,11 @@ function PlayersCardList({ players, onDelete, playerTeamMap }) {
                 <HStack mt={2} gap={2} wrap="wrap">
                   <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
                   <Badge variant="club">{tier}</Badge>
+                  {skillSource === "self_rating" && selfRating ? (
+                    <Badge variant="outline">
+                      Self-rated: {formatSelfRating(selfRating)}
+                    </Badge>
+                  ) : null}
                   {teamName ? <Badge variant="pickle">{teamName}</Badge> : null}
                 </HStack>
               </Box>
@@ -169,11 +197,7 @@ export default function PlayersPage() {
   function apiUrl(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
     const p = path.startsWith("/") ? path : `/${path}`;
-
-    // Local dev: Vite proxy handles /api -> localhost:3001
     if (!base) return p;
-
-    // Prod: hit the API subdomain directly
     return `${base}${p}`;
   }
 
@@ -183,42 +207,45 @@ export default function PlayersPage() {
     return u.toString();
   }
 
-  const [players, setPlayers] = useState([]);
-  const [status, setStatus] = useState("loading"); 
-  const [query, setQuery] = useState("");
-  const isMobile = useBreakpointValue({ base: true, md: false });
+const [players, setPlayers] = useState([]);
+const [status, setStatus] = useState("loading");
+const [query, setQuery] = useState("");
+const isMobile = useBreakpointValue({ base: true, md: false });
 
-  // Create player modal
-  const [openPlayer, setOpenPlayer] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newDupr, setNewDupr] = useState("");
+// Create player modal
+const [openPlayer, setOpenPlayer] = useState(false);
+const [newName, setNewName] = useState("");
+const [newDupr, setNewDupr] = useState("");
+const [newSelfRating, setNewSelfRating] = useState("");
 
-  // Teams section
-  const [teamsStatus, setTeamsStatus] = useState("idle"); 
-  const [teamsError, setTeamsError] = useState("");
-  const [teams, setTeams] = useState([]);
+// Teams section
+const [teamsStatus, setTeamsStatus] = useState("idle");
+const [teamsError, setTeamsError] = useState("");
+const [teams, setTeams] = useState([]);
 
-  // Create team modal
-  const [openTeam, setOpenTeam] = useState(false);
-  const [teamName, setTeamName] = useState("");
-  const [teamAId, setTeamAId] = useState("");
-  const [teamBId, setTeamBId] = useState("");
-  const [createTeamStatus, setCreateTeamStatus] = useState("idle"); 
-  const [createTeamError, setCreateTeamError] = useState("");
+// Create team modal
+const [openTeam, setOpenTeam] = useState(false);
+const [teamName, setTeamName] = useState("");
+const [teamAId, setTeamAId] = useState("");
+const [teamBId, setTeamBId] = useState("");
+const [createTeamStatus, setCreateTeamStatus] = useState("idle");
+const [createTeamError, setCreateTeamError] = useState("");
 
-  // Delete team state
-  const [deletingTeamId, setDeletingTeamId] = useState(null);
+// Delete team state
+const [deletingTeamId, setDeletingTeamId] = useState(null);
 
-  // Rename team modal
-  const [openRename, setOpenRename] = useState(false);
-  const [renameTeamId, setRenameTeamId] = useState(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [renameStatus, setRenameStatus] = useState("idle"); 
-  const [renameError, setRenameError] = useState("");
+// Rename team modal
+const [openRename, setOpenRename] = useState(false);
+const [renameTeamId, setRenameTeamId] = useState(null);
+const [renameValue, setRenameValue] = useState("");
+const [renameStatus, setRenameStatus] = useState("idle");
+const [renameError, setRenameError] = useState("");
 
-  // Generate matches
-  const [generateStatus, setGenerateStatus] = useState("idle"); 
-  const [generateError, setGenerateError] = useState("");
+// Generate matches
+const [generateStatus, setGenerateStatus] = useState("idle");
+const [generateError, setGenerateError] = useState("");
+
+  const needsSelfRating = newDupr.trim() === "";
 
   async function loadPlayers() {
     try {
@@ -309,7 +336,12 @@ export default function PlayersPage() {
     return players.filter((p) => {
       const name = (p.name ?? "").toLowerCase();
       const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? "";
-      return name.includes(q) || String(duprVal).toLowerCase().includes(q);
+      const selfRating = (p.selfRating ?? p.self_rating ?? "").toLowerCase();
+      return (
+        name.includes(q) ||
+        String(duprVal).toLowerCase().includes(q) ||
+        selfRating.includes(q)
+      );
     });
   }, [players, query]);
 
@@ -377,11 +409,23 @@ export default function PlayersPage() {
     let duprRating = null;
     if (newDupr.trim() !== "") {
       const n = Number(newDupr);
+
       if (!Number.isFinite(n)) {
-        alert("DUPR must be a number (ex: 3.25).");
+        alert("DUPR must be a number.");
         return;
       }
+
+      if (n < 2.0 || n > 6.99) {
+        alert("DUPR must be between 2.00 and 6.99, or leave it blank.");
+        return;
+      }
+
       duprRating = Math.round(n * 100) / 100;
+    }
+
+    if (duprRating === null && !newSelfRating) {
+      alert("If DUPR is blank, choose a skill level.");
+      return;
     }
 
     try {
@@ -393,7 +437,11 @@ export default function PlayersPage() {
       const res = await fetch(apiUrl(`/api/tournaments/${tid}/players`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, duprRating }),
+        body: JSON.stringify({
+          name,
+          duprRating,
+          selfRating: duprRating === null ? newSelfRating : null,
+        }),
       });
 
       const data = await res.json();
@@ -401,6 +449,7 @@ export default function PlayersPage() {
 
       setNewName("");
       setNewDupr("");
+      setNewSelfRating("");
       setOpenPlayer(false);
       await loadPlayers();
     } catch (e) {
@@ -409,23 +458,22 @@ export default function PlayersPage() {
     }
   }
 
-  async function deletePlayer(id) {
+async function deletePlayer(id) {
+  if (!confirm("Delete this player?")) return;
 
-    if (!confirm("Delete this player?")) return;
-
-    try {
-      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
-      await loadPlayers();
-      await loadTeams();
-    } catch (e) {
-      console.error(e);
-      alert(e.message || "Could not delete player.");
-    }
+  try {
+    const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error);
+    await loadPlayers();
+    await loadTeams();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Could not delete player.");
   }
+}
 
   async function createTeam() {
     setCreateTeamError("");
@@ -520,16 +568,16 @@ export default function PlayersPage() {
     }
   }
 
-  async function deleteTeam(teamId) {
-    if (!tid) {
-      alert("No tournament selected.");
-      return;
-    }
- 
-    if (!confirm("Delete this doubles team?")) return;
+async function deleteTeam(teamId) {
+  if (!tid) {
+    alert("No tournament selected.");
+    return;
+  }
 
-    setDeletingTeamId(teamId);
-    setTeamsError("");
+  if (!confirm("Delete this doubles team?")) return;
+
+  setDeletingTeamId(teamId);
+  setTeamsError("");
 
     try {
       const res = await fetch(withTid(`/api/teams/${teamId}`), {
@@ -586,7 +634,6 @@ export default function PlayersPage() {
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
-      {/* Sticky header via shared component (matches MatchSchedule) */}
       <StickyPageHeader>
         <Stack gap={3} w="100%">
           <Flex
@@ -604,9 +651,8 @@ export default function PlayersPage() {
               >
                 <Home size={18} />
               </IconButton>
-
-              {/* Page icon - no box */}
-              <User size={18} />
+{/* Page icon - no box */}
+<User size={18} />
 
               <Heading size="lg" letterSpacing="-0.02em">
                 Players
@@ -619,21 +665,18 @@ export default function PlayersPage() {
                 <Badge variant="club">Backend issue</Badge>
               )}
             </HStack>
-            {/* keep empty to mirror MatchSchedule header spacing */}
             <Box />
           </Flex>
 
-          {/* Second line helps match banner height/feel */}
           <Text opacity={0.85}>
-            Search by <b>name</b> or <b>DUPR</b>. Then create doubles teams
-            below.
+            Search by <b>name</b>, <b>DUPR</b>, or <b>skill level</b>. Then
+            create doubles teams below.
           </Text>
         </Stack>
       </StickyPageHeader>
 
       <Container maxW="6xl" pt={{ base: 8, md: 10 }} px={{ base: 4, md: 6 }}>
         <Stack gap={6}>
-          {/* Actions row (search + buttons) */}
           <Flex
             align={{ base: "stretch", md: "center" }}
             justify="space-between"
@@ -652,7 +695,7 @@ export default function PlayersPage() {
               </Box>
               <Input
                 pl="38px"
-                placeholder="Search name or DUPR…"
+                placeholder="Search name, DUPR, or skill level…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -683,7 +726,6 @@ export default function PlayersPage() {
             </HStack>
           </Flex>
 
-          {/* Players Table */}
           <Box
             bg="white"
             border="1px solid"
@@ -732,6 +774,7 @@ export default function PlayersPage() {
                         <Table.ColumnHeader>Name</Table.ColumnHeader>
                         <Table.ColumnHeader>DUPR</Table.ColumnHeader>
                         <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                        <Table.ColumnHeader>Skill Input</Table.ColumnHeader>
                         <Table.ColumnHeader>Team</Table.ColumnHeader>
                         <Table.ColumnHeader textAlign="end">
                           Actions
@@ -745,6 +788,9 @@ export default function PlayersPage() {
                           p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
                         const tier = p.duprTier ?? duprTierFromNumber(duprVal);
                         const teamName = playerTeamMap.get(String(p.id)) ?? "";
+                        const selfRating = p.selfRating ?? p.self_rating ?? "";
+                        const skillSource =
+                          p.skillSource ?? p.skill_source ?? "";
 
                         return (
                           <Table.Row key={p.id ?? p.email ?? p.name}>
@@ -760,6 +806,18 @@ export default function PlayersPage() {
 
                             <Table.Cell>
                               <Badge variant="club">{tier}</Badge>
+                            </Table.Cell>
+
+                            <Table.Cell>
+                              {skillSource === "self_rating" && selfRating ? (
+                                <Badge variant="outline">
+                                  {formatSelfRating(selfRating)}
+                                </Badge>
+                              ) : (
+                                <Text opacity={0.6}>
+                                  Official / entered DUPR
+                                </Text>
+                              )}
                             </Table.Cell>
 
                             <Table.Cell>
@@ -791,7 +849,6 @@ export default function PlayersPage() {
             </Box>
           </Box>
 
-          {/* Doubles Teams Section */}
           <Card.Root>
             <Card.Body>
               <Flex
@@ -976,7 +1033,6 @@ export default function PlayersPage() {
             </Card.Body>
           </Card.Root>
 
-          {/* Create Player Modal */}
           <Dialog.Root
             open={openPlayer}
             onOpenChange={(e) => setOpenPlayer(e.open)}
@@ -990,18 +1046,57 @@ export default function PlayersPage() {
                   </Dialog.Header>
 
                   <Dialog.Body>
-                    <Stack gap={3}>
+                    <Stack gap={4}>
                       <Input
                         placeholder="Player name"
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                       />
-                      <Input
-                        placeholder="DUPR (optional)"
-                        value={newDupr}
-                        onChange={(e) => setNewDupr(e.target.value)}
-                        inputMode="decimal"
-                      />
+
+                      <Stack gap={2}>
+                        <Input
+                          placeholder="DUPR 2.00–6.99 (optional)"
+                          value={newDupr}
+                          onChange={(e) => setNewDupr(e.target.value)}
+                          inputMode="decimal"
+                        />
+                        <Text fontSize="xs" opacity={0.7}>
+                          If DUPR is blank, choose a skill level below.
+                        </Text>
+                      </Stack>
+
+                      <Stack gap={2}>
+                        <Text fontSize="sm" fontWeight="700">
+                          Skill level{" "}
+                          {needsSelfRating
+                            ? "(required if DUPR is blank)"
+                            : "(optional)"}
+                        </Text>
+
+                        <Select.Root
+                          collection={selfRatingCollection}
+                          value={newSelfRating ? [newSelfRating] : []}
+                          onValueChange={(d) =>
+                            setNewSelfRating(d.value?.[0] ?? "")
+                          }
+                        >
+                          <Select.Trigger>
+                            <Select.ValueText placeholder="Choose a skill level" />
+                          </Select.Trigger>
+                          <Select.Content>
+                            {selfRatingCollection.items.map((item) => (
+                              <Select.Item key={item.value} item={item}>
+                                {item.label}
+                              </Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select.Root>
+
+                        <Text fontSize="xs" opacity={0.7}>
+                          This helps create fairer matchups when official DUPR
+                          is unknown.
+                        </Text>
+                      </Stack>
                     </Stack>
                   </Dialog.Body>
 
@@ -1009,7 +1104,12 @@ export default function PlayersPage() {
                     <HStack gap={2}>
                       <Button
                         variant="outline"
-                        onClick={() => setOpenPlayer(false)}
+                        onClick={() => {
+                          setOpenPlayer(false);
+                          setNewName("");
+                          setNewDupr("");
+                          setNewSelfRating("");
+                        }}
                       >
                         Cancel
                       </Button>
@@ -1023,7 +1123,6 @@ export default function PlayersPage() {
             </Portal>
           </Dialog.Root>
 
-          {/* Create Team Modal */}
           <Dialog.Root
             open={openTeam}
             onOpenChange={(e) => setOpenTeam(e.open)}
@@ -1152,7 +1251,6 @@ export default function PlayersPage() {
             </Portal>
           </Dialog.Root>
 
-          {/* Rename Team Modal */}
           <Dialog.Root
             open={openRename}
             onOpenChange={(e) => setOpenRename(e.open)}

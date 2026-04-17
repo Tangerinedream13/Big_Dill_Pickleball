@@ -1,4 +1,3 @@
-// client/src/App.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -21,8 +20,10 @@ import {
   Users,
   CalendarDays,
   LogIn,
+  LogOut,
   ChevronDown,
   Settings,
+  MapPin,
 } from "lucide-react";
 
 import heroImg from "./assets/pickleball-court.png";
@@ -89,21 +90,35 @@ function ActionTile({ icon, title, desc, cta, onClick, disabled = false }) {
   );
 }
 
+function apiUrl(path) {
+  const base = (API_BASE || "").replace(/\/$/, "");
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (!base) return p;
+  return `${base}${p}`;
+}
+
+const selfRatingCollection = createListCollection({
+  items: [
+    { label: "Beginner / New to pickleball", value: "beginner" },
+    { label: "Lower Intermediate", value: "lower_intermediate" },
+    { label: "Intermediate", value: "intermediate" },
+    { label: "Advanced", value: "advanced" },
+    { label: "Very Advanced / Tournament player", value: "very_advanced" },
+  ],
+});
+
 /* -----------------------------
    App
 ------------------------------ */
 
-export default function App() {
+export default function App({ user, setUser }) {
   usePageTitle("Home");
 
   const navigate = useNavigate();
 
- 
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
- 
   }, []);
-
   /* -----------------------------
      Tournament selection (global)
   ------------------------------ */
@@ -132,10 +147,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    // Load tournaments once when landing on homepage
-    if (tournamentsStatus === "idle") loadTournaments();
-
-  }, []);
+  if (tournamentsStatus === "idle") loadTournaments();
+}, [tournamentsStatus]);
 
   const tournamentCollection = useMemo(
     () =>
@@ -165,23 +178,42 @@ export default function App() {
   const [joinName, setJoinName] = useState("");
   const [joinEmail, setJoinEmail] = useState("");
   const [joinDupr, setJoinDupr] = useState("");
+  const [joinSelfRating, setJoinSelfRating] = useState("");
   const [joinStatus, setJoinStatus] = useState("idle");
   const [joinError, setJoinError] = useState("");
 
   const isSubmitting = joinStatus === "saving";
+  const needsSelfRating = joinDupr.trim() === "";
 
   const canJoinSubmit =
-    joinName.trim() && joinEmail.includes("@") && selectedTid && !isSubmitting;
+    joinName.trim() &&
+    joinEmail.includes("@") &&
+    selectedTid &&
+    !isSubmitting &&
+    (!needsSelfRating || !!joinSelfRating);
 
   async function submitJoin(e) {
     e.preventDefault();
     setJoinError("");
     setJoinStatus("saving");
 
+    const trimmedDupr = joinDupr.trim();
+
+    if (trimmedDupr !== "") {
+      const n = Number(trimmedDupr);
+
+      if (!Number.isFinite(n) || n < 2.0 || n > 6.99) {
+        setJoinError("DUPR must be between 2.00 and 6.99, or leave it blank.");
+        setJoinStatus("idle");
+        return;
+      }
+    }
+
     const payload = {
       name: joinName.trim(),
       email: joinEmail.trim().toLowerCase(),
       duprRating: joinDupr.trim(),
+      selfRating: joinDupr.trim() === "" ? joinSelfRating : null,
     };
 
     try {
@@ -202,7 +234,10 @@ export default function App() {
         tournamentId: selectedTid,
         name: payload.name,
         email: payload.email,
-        duprRating: payload.duprRating || "—",
+        duprRating: data?.duprRating ?? payload.duprRating ?? "—",
+        selfRating: data?.selfRating ?? payload.selfRating ?? null,
+        skillSource:
+          data?.skillSource ?? (payload.duprRating ? "dupr" : "self_rating"),
         _optimistic: true,
       });
 
@@ -216,9 +251,19 @@ export default function App() {
     }
   }
 
-  /* -----------------------------
-     UI
-  ------------------------------ */
+  async function handleLogout() {
+    try {
+      await fetch(apiUrl("/api/auth/logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUser(null);
+      navigate("/login");
+    }
+  }
 
   const selectedTournamentLabel =
     tournamentCollection.items.find((i) => i.value === String(selectedTid))
@@ -234,7 +279,6 @@ export default function App() {
               direction={{ base: "column", md: "row" }}
               align="stretch"
             >
-              {/* Hero image (DESKTOP ONLY) */}
               <Box
                 display={{ base: "none", md: "block" }}
                 flex="1"
@@ -254,37 +298,59 @@ export default function App() {
                 />
               </Box>
 
-              {/* Main content */}
               <Stack
                 flex="1"
                 gap={{ base: 4, md: 4 }}
                 order={{ base: 1, md: 0 }}
               >
-                <HStack gap={3} align="center" flexWrap="nowrap">
-                  <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
-                    Big Dill Pickleball
-                  </Heading>
+                <HStack justify="space-between" align="start" wrap="wrap">
+                  <HStack gap={3} align="center" flexWrap="nowrap">
+                    <Heading size={{ base: "lg", md: "xl" }} lineHeight="1">
+                      Big Dill Pickleball
+                    </Heading>
 
-                  {/* Mobile-only smaller version of the SAME hero image */}
-                  <Box
-                    display={{ base: "block", md: "none" }}
-                    as="img"
-                    src={heroImg}
-                    alt="Pickleball"
-                    h="42px"
-                    w="auto"
-                    objectFit="contain"
-                    flexShrink={0}
-                  />
+                    <Box
+                      display={{ base: "block", md: "none" }}
+                      as="img"
+                      src={heroImg}
+                      alt="Pickleball"
+                      h="42px"
+                      w="auto"
+                      objectFit="contain"
+                      flexShrink={0}
+                    />
 
-                  <Box
-                    display={{ base: "none", sm: "block" }}
-                    w="1px"
-                    h="24px"
-                    bg="border"
-                    opacity={0.6}
-                    mx={2}
-                  />
+                    <Box
+                      display={{ base: "none", sm: "block" }}
+                      w="1px"
+                      h="24px"
+                      bg="border"
+                      opacity={0.6}
+                      mx={2}
+                    />
+                  </HStack>
+
+                  <HStack gap={2} wrap="wrap">
+                    {user ? (
+                      <>
+                        <Text fontSize="sm" opacity={0.85}>
+                          {user.email} ({user.role})
+                        </Text>
+                        <Button variant="outline" onClick={handleLogout}>
+                          <LogOut size={16} style={{ marginRight: 8 }} />
+                          Log Out
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate("/login")}
+                      >
+                        <LogIn size={16} style={{ marginRight: 8 }} />
+                        Admin Login
+                      </Button>
+                    )}
+                  </HStack>
                 </HStack>
 
                 <Surface p={{ base: 3, md: 4 }}>
@@ -301,7 +367,6 @@ export default function App() {
                       </Text>
                     ) : null}
 
-                    {/* Ensure the select never overflows */}
                     <Box w="full">
                       <Select.Root
                         collection={tournamentCollection}
@@ -344,7 +409,6 @@ export default function App() {
                   </Stack>
                 </Surface>
 
-                {/* Buttons */}
                 <Stack direction="column" gap={3} align="stretch">
                   <Button
                     w="full"
@@ -362,10 +426,28 @@ export default function App() {
                     bg="club.900"
                     color="white"
                     _hover={{ bg: "club.800" }}
-                    onClick={() => navigate("/tournaments/new")}
+                    onClick={() =>
+                      user ? navigate("/tournaments/new") : navigate("/login")
+                    }
                   >
                     <Settings size={18} style={{ marginRight: 8 }} />
                     Manage Tournament
+                  </Button>
+
+                  <Button
+                    w="full"
+                    bg="club.900"
+                    color="white"
+                    _hover={{ bg: "club.800" }}
+                    onClick={() =>
+                      selectedTid
+                        ? navigate(`/tournaments/${selectedTid}/info`)
+                        : null
+                    }
+                    disabled={!selectedTid}
+                  >
+                    <MapPin size={18} style={{ marginRight: 8 }} />
+                    Tournament Info
                   </Button>
                 </Stack>
 
@@ -399,12 +481,52 @@ export default function App() {
                           disabled={isSubmitting}
                         />
 
-                        <Input
-                          placeholder="DUPR (optional)"
-                          value={joinDupr}
-                          onChange={(e) => setJoinDupr(e.target.value)}
-                          disabled={isSubmitting}
-                        />
+                        <Stack gap={2}>
+                          <Input
+                            placeholder="DUPR 2.00–6.99 (optional)"
+                            value={joinDupr}
+                            onChange={(e) => setJoinDupr(e.target.value)}
+                            disabled={isSubmitting}
+                          />
+                          <Text fontSize="xs" opacity={0.7}>
+                            If you don’t know your DUPR, leave it blank and
+                            choose a skill level below.
+                          </Text>
+                        </Stack>
+
+                        <Stack gap={2}>
+                          <Text fontSize="sm" fontWeight="700">
+                            Skill level{" "}
+                            {needsSelfRating
+                              ? "(required if DUPR is blank)"
+                              : "(optional)"}
+                          </Text>
+
+                          <Select.Root
+                            collection={selfRatingCollection}
+                            value={joinSelfRating ? [joinSelfRating] : []}
+                            onValueChange={(d) =>
+                              setJoinSelfRating(d.value?.[0] ?? "")
+                            }
+                            disabled={isSubmitting}
+                          >
+                            <Select.Trigger>
+                              <Select.ValueText placeholder="Choose your skill level" />
+                            </Select.Trigger>
+                            <Select.Content>
+                              {selfRatingCollection.items.map((item) => (
+                                <Select.Item key={item.value} item={item}>
+                                  {item.label}
+                                </Select.Item>
+                              ))}
+                            </Select.Content>
+                          </Select.Root>
+
+                          <Text fontSize="xs" opacity={0.7}>
+                            This helps us create fairer matchups if you do not
+                            have an official DUPR.
+                          </Text>
+                        </Stack>
 
                         <HStack
                           justify={{ base: "stretch", sm: "flex-end" }}
@@ -436,6 +558,7 @@ export default function App() {
               </Stack>
             </Flex>
           </Surface>
+
           <Grid
             templateColumns={{
               base: "1fr",

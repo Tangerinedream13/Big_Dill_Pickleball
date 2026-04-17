@@ -119,7 +119,6 @@ export default function App({ user, setUser }) {
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
   }, []);
-
   /* -----------------------------
      Tournament selection (global)
   ------------------------------ */
@@ -148,8 +147,8 @@ export default function App({ user, setUser }) {
   }
 
   useEffect(() => {
-    if (tournamentsStatus === "idle") loadTournaments();
-  }, [tournamentsStatus]);
+  if (tournamentsStatus === "idle") loadTournaments();
+}, [tournamentsStatus]);
 
   const tournamentCollection = useMemo(
     () =>

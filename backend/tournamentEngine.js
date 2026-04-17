@@ -94,7 +94,7 @@ function generateRoundRobinSchedule(teams, gamesPerTeam = 4, options = {}) {
     return schedule;
   }
 
-  // Partial Round Robin: greedy + shuffle
+  // Partial Round Robin
   const allPairs = [];
   for (let i = 0; i < teamIds.length; i++) {
     for (let j = i + 1; j < teamIds.length; j++) {
@@ -171,7 +171,6 @@ function scoreMatch(matches, matchId, scoreA, scoreB) {
  *   and do NOT change pointDiff.
  */
 function computeStandings(teamIds, rrMatches) {
-  // normalize ids to strings so Map keys match DB-returned ids like "41"
   const ids = teamIds.map((id) => String(id));
 
   const stats = new Map(

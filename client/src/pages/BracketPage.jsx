@@ -29,15 +29,15 @@ import usePageTitle from "../hooks/usePageTitle";
 function safeTeamLabel(team, fallback) {
   if (!team) return fallback;
 
-  // Common: { id, name: "Haddon Girls" }
+
   if (typeof team.name === "string") return team.name;
 
-  // Sometimes: { id, name: { id, name } }
+
   if (team.name && typeof team.name === "object") {
     if (typeof team.name.name === "string") return team.name.name;
   }
 
-  // Alternate keys
+
   if (typeof team.teamName === "string") return team.teamName;
   if (typeof team.title === "string") return team.title;
 
@@ -219,7 +219,7 @@ export default function BracketPage() {
 
   useEffect(() => {
     fetchState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [tid]);
 
   const teams = state.teams || [];

@@ -124,6 +124,7 @@ function validateScore(phase, a, b) {
   return null;
 }
 
+// Forfeit/scratch detection:
 function isForfeitRR(match) {
   if (match?.phase !== "RR") return false;
   if (!match?.winnerId) return false;
@@ -132,6 +133,7 @@ function isForfeitRR(match) {
   const bEmpty =
     match.scoreB === null || match.scoreB === undefined || match.scoreB === "";
   return aEmpty && bEmpty;
+} aEmpty && bEmpty;
 }
 
 function hasAnyScoreOrForfeit(m) {
@@ -534,21 +536,24 @@ export default function MatchSchedule() {
   const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);
   const [phaseFilter, setPhaseFilter] = useState("ALL");
   const [query, setQuery] = useState("");
-  const [edits, setEdits] = useState({});
-  const [editMode, setEditMode] = useState({});
-  const [resetting, setResetting] = useState(false);
-  const [resetError, setResetError] = useState("");
-  const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
-  const [resetPlayoffsError, setResetPlayoffsError] = useState("");
-  const [advancingSemis, setAdvancingSemis] = useState(false);
-  const [advanceSemisError, setAdvanceSemisError] = useState("");
-  const [advancingFinals, setAdvancingFinals] = useState(false);
-  const [advanceFinalsError, setAdvanceFinalsError] = useState("");
-  const [savedMsg, setSavedMsg] = useState("");
-  const [queueActionLoading, setQueueActionLoading] = useState(false);
-  const [queueActionError, setQueueActionError] = useState("");
+ const [edits, setEdits] = useState({});
 
-  const tid = getCurrentTournamentId();
+// per-match edit mode (lets you re-enter after save)
+const [editMode, setEditMode] = useState({});
+
+const [resetting, setResetting] = useState(false);
+const [resetError, setResetError] = useState("");
+const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
+const [resetPlayoffsError, setResetPlayoffsError] = useState("");
+const [advancingSemis, setAdvancingSemis] = useState(false);
+const [advanceSemisError, setAdvanceSemisError] = useState("");
+const [advancingFinals, setAdvancingFinals] = useState(false);
+const [advanceFinalsError, setAdvanceFinalsError] = useState("");
+const [savedMsg, setSavedMsg] = useState("");
+const [queueActionLoading, setQueueActionLoading] = useState(false);
+const [queueActionError, setQueueActionError] = useState("");
+
+const tid = getCurrentTournamentId();
 
   function withTid(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
@@ -647,7 +652,7 @@ export default function MatchSchedule() {
     setEdits({});
     setEditMode({});
     loadState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [tid]);
 
   const teamsById = useMemo(() => {
@@ -668,13 +673,13 @@ export default function MatchSchedule() {
   }, [teamsById]);
 
   const standings = state?.standings ?? [];
-  const seedByTeamId = useMemo(() => {
-    const map = new Map();
-    standings.slice(0, 4).forEach((s, idx) => {
-      map.set(String(s.teamId), idx + 1);
-    });
-    return map;
-  }, [standings]);
+const seedByTeamId = useMemo(() => {
+  const map = new Map();
+  standings.slice(0, 4).forEach((s, idx) => {
+    map.set(String(s.teamId), idx + 1);
+  });
+  return map;
+}, [standings]);
 
   const rrMatches = useMemo(
     () => (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" })),
@@ -999,11 +1004,12 @@ export default function MatchSchedule() {
   }
 
   async function resetMatches() {
-    setResetError("");
+  setResetError("");
 
-    if (!tid) return setResetError("No tournament selected.");
-    if (!confirm("Reset ALL matches for this tournament? This cannot be undone."))
-      return;
+  if (!tid) return setResetError("No tournament selected.");
+
+  if (!confirm("Reset ALL matches for this tournament? This cannot be undone."))
+    return;
 
     setResetting(true);
     try {
@@ -1023,11 +1029,12 @@ export default function MatchSchedule() {
   }
 
   async function resetPlayoffs() {
-    setResetPlayoffsError("");
+  setResetPlayoffsError("");
 
-    if (!tid) return setResetPlayoffsError("No tournament selected.");
-    if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"))
-      return;
+  if (!tid) return setResetPlayoffsError("No tournament selected.");
+
+  if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"))
+    return;
 
     setResettingPlayoffs(true);
     try {
@@ -1180,11 +1187,11 @@ export default function MatchSchedule() {
     return base;
   }
 
-  const [scratchOpen, setScratchOpen] = useState(false);
-  const [scratchMatch, setScratchMatch] = useState(null);
-  const [scratchStatus, setScratchStatus] = useState("idle");
-  const [scratchError, setScratchError] = useState("");
-  const [confirmScratchFor, setConfirmScratchFor] = useState(null);
+const [scratchOpen, setScratchOpen] = useState(false);
+const [scratchMatch, setScratchMatch] = useState(null);
+const [scratchStatus, setScratchStatus] = useState("idle");
+const [scratchError, setScratchError] = useState("");
+const [confirmScratchFor, setConfirmScratchFor] = useState(null);
 
   function openScratch(m) {
     if (tournamentComplete) return;

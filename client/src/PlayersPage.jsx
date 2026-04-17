@@ -207,43 +207,43 @@ export default function PlayersPage() {
     return u.toString();
   }
 
-  const [players, setPlayers] = useState([]);
-  const [status, setStatus] = useState("loading");
-  const [query, setQuery] = useState("");
-  const isMobile = useBreakpointValue({ base: true, md: false });
+const [players, setPlayers] = useState([]);
+const [status, setStatus] = useState("loading");
+const [query, setQuery] = useState("");
+const isMobile = useBreakpointValue({ base: true, md: false });
 
-  // Create player modal
-  const [openPlayer, setOpenPlayer] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newDupr, setNewDupr] = useState("");
-  const [newSelfRating, setNewSelfRating] = useState("");
+// Create player modal
+const [openPlayer, setOpenPlayer] = useState(false);
+const [newName, setNewName] = useState("");
+const [newDupr, setNewDupr] = useState("");
+const [newSelfRating, setNewSelfRating] = useState("");
 
-  // Teams section
-  const [teamsStatus, setTeamsStatus] = useState("idle");
-  const [teamsError, setTeamsError] = useState("");
-  const [teams, setTeams] = useState([]);
+// Teams section
+const [teamsStatus, setTeamsStatus] = useState("idle");
+const [teamsError, setTeamsError] = useState("");
+const [teams, setTeams] = useState([]);
 
-  // Create team modal
-  const [openTeam, setOpenTeam] = useState(false);
-  const [teamName, setTeamName] = useState("");
-  const [teamAId, setTeamAId] = useState("");
-  const [teamBId, setTeamBId] = useState("");
-  const [createTeamStatus, setCreateTeamStatus] = useState("idle");
-  const [createTeamError, setCreateTeamError] = useState("");
+// Create team modal
+const [openTeam, setOpenTeam] = useState(false);
+const [teamName, setTeamName] = useState("");
+const [teamAId, setTeamAId] = useState("");
+const [teamBId, setTeamBId] = useState("");
+const [createTeamStatus, setCreateTeamStatus] = useState("idle");
+const [createTeamError, setCreateTeamError] = useState("");
 
-  // Delete team state
-  const [deletingTeamId, setDeletingTeamId] = useState(null);
+// Delete team state
+const [deletingTeamId, setDeletingTeamId] = useState(null);
 
-  // Rename team modal
-  const [openRename, setOpenRename] = useState(false);
-  const [renameTeamId, setRenameTeamId] = useState(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [renameStatus, setRenameStatus] = useState("idle");
-  const [renameError, setRenameError] = useState("");
+// Rename team modal
+const [openRename, setOpenRename] = useState(false);
+const [renameTeamId, setRenameTeamId] = useState(null);
+const [renameValue, setRenameValue] = useState("");
+const [renameStatus, setRenameStatus] = useState("idle");
+const [renameError, setRenameError] = useState("");
 
-  // Generate matches
-  const [generateStatus, setGenerateStatus] = useState("idle");
-  const [generateError, setGenerateError] = useState("");
+// Generate matches
+const [generateStatus, setGenerateStatus] = useState("idle");
+const [generateError, setGenerateError] = useState("");
 
   const needsSelfRating = newDupr.trim() === "";
 
@@ -326,7 +326,7 @@ export default function PlayersPage() {
   useEffect(() => {
     loadPlayers();
     loadTeams();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [tid]);
 
   const filteredPlayers = useMemo(() => {
@@ -458,22 +458,22 @@ export default function PlayersPage() {
     }
   }
 
-  async function deletePlayer(id) {
-    if (!confirm("Delete this player?")) return;
+async function deletePlayer(id) {
+  if (!confirm("Delete this player?")) return;
 
-    try {
-      const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error);
-      await loadPlayers();
-      await loadTeams();
-    } catch (e) {
-      console.error(e);
-      alert(e.message || "Could not delete player.");
-    }
+  try {
+    const res = await fetch(apiUrl(`/api/tournaments/${tid}/players/${id}`), {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error);
+    await loadPlayers();
+    await loadTeams();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || "Could not delete player.");
   }
+}
 
   async function createTeam() {
     setCreateTeamError("");
@@ -568,15 +568,16 @@ export default function PlayersPage() {
     }
   }
 
-  async function deleteTeam(teamId) {
-    if (!tid) {
-      alert("No tournament selected.");
-      return;
-    }
-    if (!confirm("Delete this doubles team?")) return;
+async function deleteTeam(teamId) {
+  if (!tid) {
+    alert("No tournament selected.");
+    return;
+  }
 
-    setDeletingTeamId(teamId);
-    setTeamsError("");
+  if (!confirm("Delete this doubles team?")) return;
+
+  setDeletingTeamId(teamId);
+  setTeamsError("");
 
     try {
       const res = await fetch(withTid(`/api/teams/${teamId}`), {
@@ -650,8 +651,8 @@ export default function PlayersPage() {
               >
                 <Home size={18} />
               </IconButton>
-
-              <User size={18} />
+{/* Page icon - no box */}
+<User size={18} />
 
               <Heading size="lg" letterSpacing="-0.02em">
                 Players

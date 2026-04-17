@@ -124,14 +124,15 @@ function validateScore(phase, a, b) {
   return null;
 }
 
-// Forfeit/scratch detection:
 function isForfeitRR(match) {
   if (match?.phase !== "RR") return false;
   if (!match?.winnerId) return false;
+
   const aEmpty =
     match.scoreA === null || match.scoreA === undefined || match.scoreA === "";
   const bEmpty =
     match.scoreB === null || match.scoreB === undefined || match.scoreB === "";
+
   return aEmpty && bEmpty;
 } aEmpty && bEmpty;
 }
@@ -538,8 +539,16 @@ export default function MatchSchedule() {
   const [query, setQuery] = useState("");
  const [edits, setEdits] = useState({});
 
+
+  // { [matchId]: { scoreA: string, scoreB: string, saving: boolean, error: string|null } }
+  const [edits, setEdits] = useState({});
+
+  // per-match edit mode (lets you re-enter after save)
+  const [editMode, setEditMode] = useState({});
+
 // per-match edit mode (lets you re-enter after save)
 const [editMode, setEditMode] = useState({});
+
 
 const [resetting, setResetting] = useState(false);
 const [resetError, setResetError] = useState("");
@@ -652,7 +661,6 @@ const tid = getCurrentTournamentId();
     setEdits({});
     setEditMode({});
     loadState();
-
   }, [tid]);
 
   const teamsById = useMemo(() => {
@@ -673,13 +681,16 @@ const tid = getCurrentTournamentId();
   }, [teamsById]);
 
   const standings = state?.standings ?? [];
-const seedByTeamId = useMemo(() => {
-  const map = new Map();
-  standings.slice(0, 4).forEach((s, idx) => {
-    map.set(String(s.teamId), idx + 1);
-  });
-  return map;
-}, [standings]);
+
+
+  const seedByTeamId = useMemo(() => {
+    const map = new Map();
+    standings.slice(0, 4).forEach((s, idx) => {
+      map.set(String(s.teamId), idx + 1);
+    });
+    return map;
+  }, [standings]);
+
 
   const rrMatches = useMemo(
     () => (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" })),
@@ -1028,7 +1039,7 @@ const seedByTeamId = useMemo(() => {
     }
   }
 
-  async function resetPlayoffs() {
+ async function resetPlayoffs() {
   setResetPlayoffsError("");
 
   if (!tid) return setResetPlayoffsError("No tournament selected.");
@@ -1187,6 +1198,7 @@ const seedByTeamId = useMemo(() => {
     return base;
   }
 
+// ------------------ SCRATCH / FORFEIT (Round Robin) ------------------
 const [scratchOpen, setScratchOpen] = useState(false);
 const [scratchMatch, setScratchMatch] = useState(null);
 const [scratchStatus, setScratchStatus] = useState("idle");

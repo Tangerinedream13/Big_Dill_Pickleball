@@ -117,14 +117,15 @@ function validateScore(phase, a, b) {
   return null;
 }
 
-// Forfeit/scratch detection:
 function isForfeitRR(match) {
   if (match?.phase !== "RR") return false;
   if (!match?.winnerId) return false;
+
   const aEmpty =
     match.scoreA === null || match.scoreA === undefined || match.scoreA === "";
   const bEmpty =
     match.scoreB === null || match.scoreB === undefined || match.scoreB === "";
+
   return aEmpty && bEmpty;
 }
 
@@ -396,7 +397,7 @@ export default function MatchSchedule() {
   }, []);
   const navigate = useNavigate();
 
-  const [status, setStatus] = useState("loading"); 
+  const [status, setStatus] = useState("loading");
   const [state, setState] = useState(null);
   const isMobile = useBreakpointValue({ base: true, md: false });
 
@@ -409,7 +410,7 @@ export default function MatchSchedule() {
   const [edits, setEdits] = useState({});
 
   // per-match edit mode (lets you re-enter after save)
-  const [editMode, setEditMode] = useState({}); 
+  const [editMode, setEditMode] = useState({});
 
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState("");
@@ -524,7 +525,6 @@ export default function MatchSchedule() {
     setEdits({});
     setEditMode({});
     loadState();
-
   }, [tid]);
 
   const teamsById = useMemo(() => {
@@ -549,7 +549,7 @@ export default function MatchSchedule() {
   const seedByTeamId = useMemo(() => {
     const map = new Map();
     standings.slice(0, 4).forEach((s, idx) => {
-      map.set(String(s.teamId), idx + 1); 
+      map.set(String(s.teamId), idx + 1);
     });
     return map;
   }, [standings]);
@@ -863,7 +863,7 @@ export default function MatchSchedule() {
     setResetPlayoffsError("");
 
     if (!tid) return setResetPlayoffsError("No tournament selected.");
-   
+
     if (
       !confirm(
         "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
@@ -1024,7 +1024,7 @@ export default function MatchSchedule() {
   // ------------------ SCRATCH / FORFEIT (Round Robin) ------------------
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchMatch, setScratchMatch] = useState(null);
-  const [scratchStatus, setScratchStatus] = useState("idle"); 
+  const [scratchStatus, setScratchStatus] = useState("idle");
   const [scratchError, setScratchError] = useState("");
   const [confirmScratchFor, setConfirmScratchFor] = useState(null);
 

@@ -98,10 +98,10 @@ export default function App() {
 
   const navigate = useNavigate();
 
-  // silent backend ping
+ 
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+ 
   }, []);
 
   /* -----------------------------
@@ -134,7 +134,7 @@ export default function App() {
   useEffect(() => {
     // Load tournaments once when landing on homepage
     if (tournamentsStatus === "idle") loadTournaments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   const tournamentCollection = useMemo(

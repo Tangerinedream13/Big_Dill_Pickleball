@@ -184,7 +184,7 @@ export default function PlayersPage() {
   }
 
   const [players, setPlayers] = useState([]);
-  const [status, setStatus] = useState("loading"); // loading | ok | error
+  const [status, setStatus] = useState("loading"); 
   const [query, setQuery] = useState("");
   const isMobile = useBreakpointValue({ base: true, md: false });
 
@@ -194,7 +194,7 @@ export default function PlayersPage() {
   const [newDupr, setNewDupr] = useState("");
 
   // Teams section
-  const [teamsStatus, setTeamsStatus] = useState("idle"); // idle | loading | ok | error
+  const [teamsStatus, setTeamsStatus] = useState("idle"); 
   const [teamsError, setTeamsError] = useState("");
   const [teams, setTeams] = useState([]);
 
@@ -203,7 +203,7 @@ export default function PlayersPage() {
   const [teamName, setTeamName] = useState("");
   const [teamAId, setTeamAId] = useState("");
   const [teamBId, setTeamBId] = useState("");
-  const [createTeamStatus, setCreateTeamStatus] = useState("idle"); // idle | saving | error
+  const [createTeamStatus, setCreateTeamStatus] = useState("idle"); 
   const [createTeamError, setCreateTeamError] = useState("");
 
   // Delete team state
@@ -213,11 +213,11 @@ export default function PlayersPage() {
   const [openRename, setOpenRename] = useState(false);
   const [renameTeamId, setRenameTeamId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
-  const [renameStatus, setRenameStatus] = useState("idle"); // idle | saving | error
+  const [renameStatus, setRenameStatus] = useState("idle"); 
   const [renameError, setRenameError] = useState("");
 
   // Generate matches
-  const [generateStatus, setGenerateStatus] = useState("idle"); // idle | saving | ok | error
+  const [generateStatus, setGenerateStatus] = useState("idle"); 
   const [generateError, setGenerateError] = useState("");
 
   async function loadPlayers() {
@@ -299,7 +299,7 @@ export default function PlayersPage() {
   useEffect(() => {
     loadPlayers();
     loadTeams();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [tid]);
 
   const filteredPlayers = useMemo(() => {
@@ -410,7 +410,7 @@ export default function PlayersPage() {
   }
 
   async function deletePlayer(id) {
-    // eslint-disable-next-line no-restricted-globals
+
     if (!confirm("Delete this player?")) return;
 
     try {
@@ -525,7 +525,7 @@ export default function PlayersPage() {
       alert("No tournament selected.");
       return;
     }
-    // eslint-disable-next-line no-restricted-globals
+ 
     if (!confirm("Delete this doubles team?")) return;
 
     setDeletingTeamId(teamId);
@@ -605,7 +605,7 @@ export default function PlayersPage() {
                 <Home size={18} />
               </IconButton>
 
-              {/* Page icon – no box */}
+              {/* Page icon - no box */}
               <User size={18} />
 
               <Heading size="lg" letterSpacing="-0.02em">

@@ -5,7 +5,7 @@ const system = createSystem(defaultConfig, {
   theme: {
     tokens: {
       colors: {
-        // Country-club greens (primary)
+        // Greens (primary)
         club: {
           900: { value: "#0A2418" }, // deep evergreen
           800: { value: "#113527" },
@@ -39,8 +39,6 @@ const system = createSystem(defaultConfig, {
           700: { value: "#2D2D2D" },
         },
 
-        // Keep pickle around if you still want a “fun” accent sometimes
-        // (but don’t use it as your main highlight anymore)
         pickle: {
           500: { value: "#B7F34A" },
           200: { value: "#E6FFB8" },
@@ -80,7 +78,7 @@ const system = createSystem(defaultConfig, {
           muted: { value: "{colors.ink.700}" },
         },
 
-        // Primary CTA “country club green”
+        // Green
         accent: {
           solid: { value: "{colors.club.900}" },
           hover: { value: "{colors.club.800}" },

@@ -65,9 +65,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions)); // preflight
+app.options(/.*/, cors(corsOptions)); 
 
-// body parsing
 app.use(express.json());
 app.set("trust proxy", 1);
 
@@ -169,7 +168,6 @@ app.use("/api/teams", teamsRoutes);
 app.use("/api/tournaments", tournamentsRoutes);
 app.use("/api", signupRoutes(pool));
 
-// Health
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
@@ -256,7 +254,6 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     [tournamentId, phases]
   );
 
-  // engine expects `id`
   return r.rows.map((m) => ({
     id: m.code,
     phase: m.phase,
@@ -316,7 +313,7 @@ function decoratePlacementsWithTeamNames(placements, teams) {
    Playoffs
 ------------------------------ */
 
-// Reset playoffs only (SF / FINAL / THIRD). Idempotent.
+// Reset playoffs only (SF / FINAL / THIRD).
 app.post("/api/playoffs/reset", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
@@ -1633,7 +1630,7 @@ if (process.env.NODE_ENV === "production") {
   const clientDistPath = path.join(__dirname, "..", "client", "dist");
   app.use(express.static(clientDistPath));
 
-  // SPA fallback (only for non-API GET routes)
+
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(clientDistPath, "index.html"));
   });

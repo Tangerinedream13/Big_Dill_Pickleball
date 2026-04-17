@@ -17,7 +17,7 @@ export function clearCurrentTournamentId() {
   localStorage.removeItem(KEY);
 }
 
-// optional convenience (if you need numeric)
+
 export function getCurrentTournamentIdNumber() {
   const v = getCurrentTournamentId();
   const n = Number(v);

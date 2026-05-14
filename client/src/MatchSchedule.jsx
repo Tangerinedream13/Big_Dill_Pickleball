@@ -134,7 +134,6 @@ function isForfeitRR(match) {
     match.scoreB === null || match.scoreB === undefined || match.scoreB === "";
 
   return aEmpty && bEmpty;
-} aEmpty && bEmpty;
 }
 
 function hasAnyScoreOrForfeit(m) {
@@ -243,7 +242,9 @@ function QueueMatchCard({
             <Badge variant={phase.variant}>{phase.label}</Badge>
             <Badge variant={status.variant}>{status.label}</Badge>
             <Text fontWeight="700">{match.id}</Text>
-            {match.court ? <Badge variant="outline">Court {match.court}</Badge> : null}
+            {match.court ? (
+              <Badge variant="outline">Court {match.court}</Badge>
+            ) : null}
           </HStack>
           <Text fontWeight="700">{teamDisplay(match.teamAId)}</Text>
           <Text opacity={0.7}>vs {teamDisplay(match.teamBId)}</Text>
@@ -282,7 +283,8 @@ function QueueMatchCard({
 }
 
 function QueueList({ matches, teamDisplay, onMarkOnCourt, actionLoading }) {
-  if (!matches?.length) return <Text opacity={0.7}>No upcoming playable matches.</Text>;
+  if (!matches?.length)
+    return <Text opacity={0.7}>No upcoming playable matches.</Text>;
 
   return (
     <Stack gap={3}>
@@ -302,7 +304,9 @@ function QueueList({ matches, teamDisplay, onMarkOnCourt, actionLoading }) {
                   {labelForPhase(m.phase).label}
                 </Badge>
                 <Text fontWeight="700">{m.id}</Text>
-                {m.court ? <Badge variant="outline">Court {m.court}</Badge> : null}
+                {m.court ? (
+                  <Badge variant="outline">Court {m.court}</Badge>
+                ) : null}
               </HStack>
               <Text fontWeight="700">{teamDisplay(m.teamAId)}</Text>
               <Text opacity={0.7}>vs {teamDisplay(m.teamBId)}</Text>
@@ -404,7 +408,9 @@ function MatchesCardList({
                 <Badge variant={phaseMeta.variant}>{phaseMeta.label}</Badge>
                 <Badge variant={status.variant}>{status.label}</Badge>
                 <Text fontWeight="800">{m.id}</Text>
-                {m.court ? <Badge variant="outline">Court {m.court}</Badge> : null}
+                {m.court ? (
+                  <Badge variant="outline">Court {m.court}</Badge>
+                ) : null}
               </HStack>
 
               <HStack gap={1}>
@@ -537,8 +543,6 @@ export default function MatchSchedule() {
   const [teamsWithPlayers, setTeamsWithPlayers] = useState([]);
   const [phaseFilter, setPhaseFilter] = useState("ALL");
   const [query, setQuery] = useState("");
- const [edits, setEdits] = useState({});
-
 
   // { [matchId]: { scoreA: string, scoreB: string, saving: boolean, error: string|null } }
   const [edits, setEdits] = useState({});
@@ -546,23 +550,20 @@ export default function MatchSchedule() {
   // per-match edit mode (lets you re-enter after save)
   const [editMode, setEditMode] = useState({});
 
-// per-match edit mode (lets you re-enter after save)
-const [editMode, setEditMode] = useState({});
+  const [resetting, setResetting] = useState(false);
 
+  const [resetError, setResetError] = useState("");
+  const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
+  const [resetPlayoffsError, setResetPlayoffsError] = useState("");
+  const [advancingSemis, setAdvancingSemis] = useState(false);
+  const [advanceSemisError, setAdvanceSemisError] = useState("");
+  const [advancingFinals, setAdvancingFinals] = useState(false);
+  const [advanceFinalsError, setAdvanceFinalsError] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
+  const [queueActionLoading, setQueueActionLoading] = useState(false);
+  const [queueActionError, setQueueActionError] = useState("");
 
-const [resetting, setResetting] = useState(false);
-const [resetError, setResetError] = useState("");
-const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
-const [resetPlayoffsError, setResetPlayoffsError] = useState("");
-const [advancingSemis, setAdvancingSemis] = useState(false);
-const [advanceSemisError, setAdvanceSemisError] = useState("");
-const [advancingFinals, setAdvancingFinals] = useState(false);
-const [advanceFinalsError, setAdvanceFinalsError] = useState("");
-const [savedMsg, setSavedMsg] = useState("");
-const [queueActionLoading, setQueueActionLoading] = useState(false);
-const [queueActionError, setQueueActionError] = useState("");
-
-const tid = getCurrentTournamentId();
+  const tid = getCurrentTournamentId();
 
   function withTid(path) {
     const base = (API_BASE || "").replace(/\/$/, "");
@@ -582,7 +583,9 @@ const tid = getCurrentTournamentId();
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/tournaments/${tournamentId}/teams`);
+      const res = await fetch(
+        `${API_BASE}/api/tournaments/${tournamentId}/teams`
+      );
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
@@ -594,7 +597,9 @@ const tid = getCurrentTournamentId();
       setTeamsWithPlayers(teams);
     } catch (e) {
       console.warn("Could not load teams-with-players:", e);
-      setTeamsWithPlayers(Array.isArray(fallbackState?.teams) ? fallbackState.teams : []);
+      setTeamsWithPlayers(
+        Array.isArray(fallbackState?.teams) ? fallbackState.teams : []
+      );
     }
   }
 
@@ -682,7 +687,6 @@ const tid = getCurrentTournamentId();
 
   const standings = state?.standings ?? [];
 
-
   const seedByTeamId = useMemo(() => {
     const map = new Map();
     standings.slice(0, 4).forEach((s, idx) => {
@@ -690,7 +694,6 @@ const tid = getCurrentTournamentId();
     });
     return map;
   }, [standings]);
-
 
   const rrMatches = useMemo(
     () => (state?.rrMatches ?? []).map((m) => ({ ...m, phase: "RR" })),
@@ -978,7 +981,8 @@ const tid = getCurrentTournamentId();
         method: "POST",
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Could not mark match on court.");
+      if (!res.ok)
+        throw new Error(data?.error || "Could not mark match on court.");
 
       setSavedMsg(`${match.id} moved to on-court ✅`);
       setTimeout(() => setSavedMsg(""), 2500);
@@ -997,11 +1001,15 @@ const tid = getCurrentTournamentId();
     setQueueActionLoading(true);
 
     try {
-      const res = await fetch(withTid(`/api/matches/${match.id}/reset-status`), {
-        method: "POST",
-      });
+      const res = await fetch(
+        withTid(`/api/matches/${match.id}/reset-status`),
+        {
+          method: "POST",
+        }
+      );
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Could not reset match status.");
+      if (!res.ok)
+        throw new Error(data?.error || "Could not reset match status.");
 
       setSavedMsg(`${match.id} moved back to pending ✅`);
       setTimeout(() => setSavedMsg(""), 2500);
@@ -1015,12 +1023,14 @@ const tid = getCurrentTournamentId();
   }
 
   async function resetMatches() {
-  setResetError("");
+    setResetError("");
 
-  if (!tid) return setResetError("No tournament selected.");
+    if (!tid) return setResetError("No tournament selected.");
 
-  if (!confirm("Reset ALL matches for this tournament? This cannot be undone."))
-    return;
+    if (
+      !confirm("Reset ALL matches for this tournament? This cannot be undone.")
+    )
+      return;
 
     setResetting(true);
     try {
@@ -1039,13 +1049,17 @@ const tid = getCurrentTournamentId();
     }
   }
 
- async function resetPlayoffs() {
-  setResetPlayoffsError("");
+  async function resetPlayoffs() {
+    setResetPlayoffsError("");
 
-  if (!tid) return setResetPlayoffsError("No tournament selected.");
+    if (!tid) return setResetPlayoffsError("No tournament selected.");
 
-  if (!confirm("Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"))
-    return;
+    if (
+      !confirm(
+        "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
+      )
+    )
+      return;
 
     setResettingPlayoffs(true);
     try {
@@ -1198,12 +1212,12 @@ const tid = getCurrentTournamentId();
     return base;
   }
 
-// ------------------ SCRATCH / FORFEIT (Round Robin) ------------------
-const [scratchOpen, setScratchOpen] = useState(false);
-const [scratchMatch, setScratchMatch] = useState(null);
-const [scratchStatus, setScratchStatus] = useState("idle");
-const [scratchError, setScratchError] = useState("");
-const [confirmScratchFor, setConfirmScratchFor] = useState(null);
+  // ------------------ SCRATCH / FORFEIT (Round Robin) ------------------
+  const [scratchOpen, setScratchOpen] = useState(false);
+  const [scratchMatch, setScratchMatch] = useState(null);
+  const [scratchStatus, setScratchStatus] = useState("idle");
+  const [scratchError, setScratchError] = useState("");
+  const [confirmScratchFor, setConfirmScratchFor] = useState(null);
 
   function openScratch(m) {
     if (tournamentComplete) return;
@@ -1464,7 +1478,13 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
           ) : null}
 
           {advanceSemisError ? (
-            <Box border="1px solid" borderColor="red.200" bg="red.50" p={3} borderRadius="lg">
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
               <Text color="red.700" fontSize="sm">
                 {advanceSemisError}
               </Text>
@@ -1472,7 +1492,13 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
           ) : null}
 
           {advanceFinalsError ? (
-            <Box border="1px solid" borderColor="red.200" bg="red.50" p={3} borderRadius="lg">
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
               <Text color="red.700" fontSize="sm">
                 {advanceFinalsError}
               </Text>
@@ -1480,7 +1506,13 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
           ) : null}
 
           {resetPlayoffsError ? (
-            <Box border="1px solid" borderColor="red.200" bg="red.50" p={3} borderRadius="lg">
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
               <Text color="red.700" fontSize="sm">
                 {resetPlayoffsError}
               </Text>
@@ -1488,7 +1520,13 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
           ) : null}
 
           {resetError ? (
-            <Box border="1px solid" borderColor="red.200" bg="red.50" p={3} borderRadius="lg">
+            <Box
+              border="1px solid"
+              borderColor="red.200"
+              bg="red.50"
+              p={3}
+              borderRadius="lg"
+            >
               <Text color="red.700" fontSize="sm">
                 {resetError}
               </Text>
@@ -1531,7 +1569,9 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
                           />
                         ))
                       ) : (
-                        <Text opacity={0.7}>No matches currently marked on court.</Text>
+                        <Text opacity={0.7}>
+                          No matches currently marked on court.
+                        </Text>
                       )}
                     </Stack>
                   </Box>
@@ -1555,7 +1595,13 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
           {tid && status === "ok" ? (
             <Card.Root>
               <Card.Body>
-                <Flex justify="space-between" align="center" mb={3} wrap="wrap" gap={2}>
+                <Flex
+                  justify="space-between"
+                  align="center"
+                  mb={3}
+                  wrap="wrap"
+                  gap={2}
+                >
                   <Heading size="sm">Standings</Heading>
                   <Text fontSize="sm" opacity={0.7}>
                     Switch phases
@@ -1588,7 +1634,10 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
                               const played = s.gamesPlayed ?? s.played ?? null;
                               const losses =
                                 played != null
-                                  ? Math.max(0, Number(played) - Number(s.wins ?? 0))
+                                  ? Math.max(
+                                      0,
+                                      Number(played) - Number(s.wins ?? 0)
+                                    )
                                   : "—";
                               return (
                                 <Table.Row key={String(s.teamId)}>
@@ -1596,7 +1645,9 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
                                   <Table.Cell fontWeight="600">
                                     <HStack gap={2}>
                                       <Text>{teamDisplay(s.teamId)}</Text>
-                                      {scratchedTeamIds.has(String(s.teamId)) ? (
+                                      {scratchedTeamIds.has(
+                                        String(s.teamId)
+                                      ) ? (
                                         <Badge variant="outline" opacity={0.6}>
                                           Scratched
                                         </Badge>
@@ -1618,25 +1669,40 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
 
                     <Tabs.Content value="sf">
                       {semisExist ? (
-                        <MatchesMiniList matches={semis} teamDisplay={teamDisplay} />
+                        <MatchesMiniList
+                          matches={semis}
+                          teamDisplay={teamDisplay}
+                        />
                       ) : (
-                        <Text opacity={0.7}>Semifinals haven’t been generated yet.</Text>
+                        <Text opacity={0.7}>
+                          Semifinals haven’t been generated yet.
+                        </Text>
                       )}
                     </Tabs.Content>
 
                     <Tabs.Content value="final">
                       {finalsOnly.length ? (
-                        <MatchesMiniList matches={finalsOnly} teamDisplay={teamDisplay} />
+                        <MatchesMiniList
+                          matches={finalsOnly}
+                          teamDisplay={teamDisplay}
+                        />
                       ) : (
-                        <Text opacity={0.7}>Final match not available yet.</Text>
+                        <Text opacity={0.7}>
+                          Final match not available yet.
+                        </Text>
                       )}
                     </Tabs.Content>
 
                     <Tabs.Content value="third">
                       {thirdOnly.length ? (
-                        <MatchesMiniList matches={thirdOnly} teamDisplay={teamDisplay} />
+                        <MatchesMiniList
+                          matches={thirdOnly}
+                          teamDisplay={teamDisplay}
+                        />
                       ) : (
-                        <Text opacity={0.7}>Third place match not available yet.</Text>
+                        <Text opacity={0.7}>
+                          Third place match not available yet.
+                        </Text>
                       )}
                     </Tabs.Content>
                   </Box>
@@ -1849,14 +1915,18 @@ const [confirmScratchFor, setConfirmScratchFor] = useState(null);
                             </Table.Cell>
 
                             <Table.Cell>
-                              <Badge variant={sMeta.variant}>{sMeta.label}</Badge>
+                              <Badge variant={sMeta.variant}>
+                                {sMeta.label}
+                              </Badge>
                             </Table.Cell>
 
                             <Table.Cell fontWeight="700">
                               <HStack gap={2} wrap="wrap">
                                 <Text>{m.id}</Text>
                                 {m.court ? (
-                                  <Badge variant="outline">Court {m.court}</Badge>
+                                  <Badge variant="outline">
+                                    Court {m.court}
+                                  </Badge>
                                 ) : null}
                               </HStack>
                             </Table.Cell>

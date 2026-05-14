@@ -61,7 +61,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions)); 
+app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
 app.set("trust proxy", 1);
@@ -311,83 +311,6 @@ function decoratePlacementsWithTeamNames(placements, teams) {
   };
 }
 
-/* -----------------------------
-   Playoffs
------------------------------- */
-
-// Reset playoffs only (SF / FINAL / THIRD).
-app.post("/api/playoffs/reset", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    const result = await pool.query(
-      `
-      delete from matches
-      where tournament_id = $1
-        and phase in ('SF', 'FINAL', 'THIRD');
-      `,
-      [tournamentId]
-    );
-
-    const deleted = result.rowCount || 0;
-
-    if (deleted === 0) {
-      return res.json({
-        ok: true,
-        tournamentId,
-        deleted: 0,
-        message: "No playoffs to reset.",
-      });
-    }
-
-    return res.json({ ok: true, tournamentId, deleted });
-  } catch (err) {
-    console.error("Playoffs reset error:", err);
-    res.status(500).json({ error: errToMessage(err) });
-  }
-});
-
-/* -----------------------------
-  Playoffs Generate (Semifinals)
------------------------------- */
-app.post("/api/playoffs/generate", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    // If semis already exist, don't duplicate
-    const existingSemis = await pool.query(
-      `
-      select code from matches
-      where tournament_id = $1 and phase = 'SF'
-      limit 1;
-      `,
-      [tournamentId]
-    );
-    if (existingSemis.rowCount > 0) {
-      return res.status(409).json({
-        error: "Semifinals already exist. Reset playoffs to regenerate.",
-      });
-    }
-
-    const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
-      "RR",
-    ]);
-
-    // RR must be complete (winnerId set for all matches; forfeits still set winnerId)
-    const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
-    if (rrIncomplete.length > 0) {
-      return res.status(409).json({
-        error: `Round robin isn't complete yet. Missing winners for: ${rrIncomplete
-          .map((m) => m.id)
-          .join(", ")}`,
-      });
-    }
-
-    const standings = engine.computeStandings(
-      teams.map((t) => t.id),
-      rrMatches
-    );
 function computeQueue(matches) {
   const busyTeams = new Set();
 
@@ -1734,7 +1657,6 @@ app.get("/api/matches", async (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const clientDistPath = path.join(__dirname, "..", "client", "dist");
   app.use(express.static(clientDistPath));
-
 
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(clientDistPath, "index.html"));

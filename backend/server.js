@@ -379,6 +379,12 @@ function decoratePlacementsWithTeamNames(placements, teams) {
   };
 }
 
+const DIVISIONS = ["BEGINNER_INTERMEDIATE", "ADVANCED"];
+
+function divisionPrefix(division) {
+  return division === "ADVANCED" ? "ADV" : "BI";
+}
+
 function computeQueue(matches) {
   const allMatches = Array.isArray(matches) ? matches : [];
 
@@ -548,7 +554,7 @@ async function ensureFinalsFromSemis(tournamentId) {
   await pool.query(
     `
     insert into matches (
-      tournament_id, code, phase, team_a_id, team_b_id, status
+      tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
     )
     values
       ($1, 'FINAL', 'FINAL', $2, $3, 'pending'),
@@ -683,7 +689,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
     await pool.query(
       `
       insert into matches (
-        tournament_id, code, phase, team_a_id, team_b_id, status
+        tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
       )
       values
         ($1, 'SF1', 'SF', $2, $3, 'pending'),
@@ -1194,15 +1200,31 @@ app.post("/api/tournament/reset", async (req, res) => {
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
-    const teams = await getTeamsForTournament(tournamentId);
+    const allTeams = await getTeamsForTournament(tournamentId);
 
-    if (teams.length < 3) {
+    const teamsByDivision = {};
+    for (const division of DIVISIONS) {
+      teamsByDivision[division] = allTeams.filter(
+        (team) => team.division === division
+      );
+    }
+
+    const playableDivisions = DIVISIONS.filter(
+      (division) => teamsByDivision[division].length >= 3
+    );
+
+    if (playableDivisions.length === 0) {
       return res.status(409).json({
-        error: "You need at least 3 teams to generate a round robin schedule.",
+        error:
+          "You need at least 3 teams in a division to generate a round robin schedule.",
       });
     }
 
-    const maxGamesPerTeam = teams.length - 1;
+    const maxGamesPerTeam = Math.min(
+      ...playableDivisions.map(
+        (division) => teamsByDivision[division].length - 1
+      )
+    );
 
     const raw = req.body?.gamesPerTeam;
     const hasExplicitGamesPerTeam =
@@ -1230,9 +1252,30 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     const startTime = parseISODate(req.body?.startTimeISO);
     const endTime = parseISODate(req.body?.endTimeISO);
+    const rrMatches = [];
 
-    const rawMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
-    const rrMatches = spreadOutMatches(rawMatches);
+    for (const division of playableDivisions) {
+      const divisionTeams = teamsByDivision[division];
+      const prefix = divisionPrefix(division);
+
+      const divisionGamesPerTeam = Math.min(
+        gamesPerTeam,
+        divisionTeams.length - 1
+      );
+
+      const rawMatches = engine.generateRoundRobinSchedule(
+        divisionTeams,
+        divisionGamesPerTeam
+      );
+
+      const spreadMatches = spreadOutMatches(rawMatches).map((m) => ({
+        ...m,
+        id: `${prefix}-${m.id}`,
+        division,
+      }));
+
+      rrMatches.push(...spreadMatches);
+    }
 
     await pool.query(
       `delete from matches where tournament_id = $1 and phase = 'RR';`,
@@ -1275,12 +1318,14 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
       for (const m of scheduled) {
         chunks.push(
-          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
+          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
         );
+
         params.push(
           tournamentId,
           m.id,
           "RR",
+          m.division,
           m.teamAId,
           m.teamBId,
           m.startTime ? m.startTime : null,
@@ -1292,7 +1337,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
       await pool.query(
         `
         insert into matches (
-          tournament_id, code, phase, team_a_id, team_b_id, start_time, court, status
+          tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
         )
         values ${chunks.join(", ")}
         `,

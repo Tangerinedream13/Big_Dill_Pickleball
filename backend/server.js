@@ -642,40 +642,17 @@ app.post("/api/playoffs/generate", async (req, res) => {
       `,
       [tournamentId]
     );
+
     if (existingSemis.rowCount > 0) {
       return res.status(409).json({
         error: "Semifinals already exist. Reset playoffs to regenerate.",
       });
     }
 
-    const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
-      "RR",
-    ]);
-
-    const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
-    if (rrIncomplete.length > 0) {
-      return res.status(409).json({
-        error: `Round robin isn't complete yet. Missing winners for: ${rrIncomplete
-          .map((m) => m.id)
-          .join(", ")}`,
-      });
-    }
-
-    const standings = engine.computeStandings(
-      teams.map((t) => t.id),
-      rrMatches
-    );
-
-    if (!Array.isArray(standings) || standings.length < 4) {
-      return res.status(409).json({
-        error:
-          "Need at least 4 teams (with completed RR) to generate semifinals.",
-      });
-    }
-
-    const top4 = standings.slice(0, 4).map((s) => String(s.teamId));
-    const [seed1, seed2, seed3, seed4] = top4;
+    const allTeams = await getTeamsForTournament(tournamentId);
+    const generated = [];
+    const standingsByDivision = {};
+    const skippedDivisions = [];
 
     await pool.query(
       `
@@ -686,18 +663,97 @@ app.post("/api/playoffs/generate", async (req, res) => {
       [tournamentId]
     );
 
-    await pool.query(
-      `
-      insert into matches (
-        tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
-      )
-      values
-        ($1, 'SF1', 'SF', $2, $3, 'pending'),
-        ($1, 'SF2', 'SF', $4, $5, 'pending');
-      `,
-      [tournamentId, seed1, seed4, seed2, seed3]
-    );
+    for (const division of DIVISIONS) {
+      const divisionTeams = await getTeamsForTournament(tournamentId, division);
+      const rrMatches = await getMatchesForTournamentByPhase(
+        tournamentId,
+        ["RR"],
+        division
+      );
 
+      if (divisionTeams.length < 4) {
+        skippedDivisions.push({
+          division,
+          reason: "Need at least 4 teams to generate semifinals.",
+        });
+        continue;
+      }
+
+      const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
+      if (rrIncomplete.length > 0) {
+        return res.status(409).json({
+          error: `${divisionLabel(
+            division
+          )} round robin isn't complete yet. Missing winners for: ${rrIncomplete
+            .map((m) => m.id)
+            .join(", ")}`,
+        });
+      }
+
+      const standings = engine.computeStandings(
+        divisionTeams.map((t) => t.id),
+        rrMatches
+      );
+
+      standingsByDivision[division] = standings;
+
+      if (!Array.isArray(standings) || standings.length < 4) {
+        skippedDivisions.push({
+          division,
+          reason: "Need at least 4 teams with completed standings.",
+        });
+        continue;
+      }
+
+      const top4 = standings.slice(0, 4).map((s) => String(s.teamId));
+      const [seed1, seed2, seed3, seed4] = top4;
+      const prefix = divisionPrefix(division);
+
+      await pool.query(
+        `
+        insert into matches (
+          tournament_id,
+          code,
+          phase,
+          division,
+          team_a_id,
+          team_b_id,
+          status
+        )
+        values
+          ($1, $2, 'SF', $3, $4, $5, 'pending'),
+          ($1, $6, 'SF', $3, $7, $8, 'pending');
+        `,
+        [
+          tournamentId,
+          `${prefix}-SF1`,
+          division,
+          seed1,
+          seed4,
+          `${prefix}-SF2`,
+          seed2,
+          seed3,
+        ]
+      );
+
+      generated.push({
+        division,
+        label: divisionLabel(division),
+        semis: [`${prefix}-SF1`, `${prefix}-SF2`],
+      });
+    }
+
+    if (generated.length === 0) {
+      return res.status(409).json({
+        error:
+          "No divisions had enough completed teams to generate semifinals.",
+        skippedDivisions,
+      });
+    }
+
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",
@@ -707,11 +763,13 @@ app.post("/api/playoffs/generate", async (req, res) => {
     return res.json({
       ok: true,
       tournamentId,
-      teams,
+      teams: allTeams,
       rrMatches,
-      standings,
+      standingsByDivision,
       semis,
       finals,
+      generated,
+      skippedDivisions,
       placements: null,
       queue: computeQueue([...rrMatches, ...semis, ...finals]),
     });

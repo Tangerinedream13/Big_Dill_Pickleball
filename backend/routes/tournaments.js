@@ -571,10 +571,36 @@ router.post("/:id/teams", async (req, res) => {
       finalName = `T-${tournamentId}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
     }
 
-    const teamRow = await client.query(
-      `insert into teams(name) values ($1) returning id, name;`,
-      [finalName]
+    const playersForDivision = await client.query(
+      `
+      select
+        id,
+        dupr_rating as "duprRating",
+        self_rating as "selfRating"
+      from players
+      where id in ($1, $2);
+      `,
+      [playerAId, playerBId]
     );
+
+    const division = playersForDivision.rows.some((p) => {
+      const n = Number(p.duprRating);
+      const selfRating = (p.selfRating ?? "").toString().toLowerCase();
+
+      return (Number.isFinite(n) && n >= 4.0) || selfRating === "advanced";
+    })
+      ? "ADVANCED"
+      : "BEGINNER_INTERMEDIATE";
+
+    const teamRow = await client.query(
+      `
+      insert into teams(name, division)
+      values ($1, $2)
+      returning id, name, division;
+      `,
+      [finalName, division]
+    );
+
     const teamId = teamRow.rows[0].id;
 
     await client.query(
@@ -583,8 +609,11 @@ router.post("/:id/teams", async (req, res) => {
     );
 
     await client.query(
-      `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
-      [tournamentId, teamId]
+      `
+      insert into tournament_teams(tournament_id, team_id, division)
+      values ($1, $2, $3);
+      `,
+      [tournamentId, teamId, division]
     );
 
     await client.query("COMMIT");
@@ -592,7 +621,7 @@ router.post("/:id/teams", async (req, res) => {
     res.status(201).json({
       ok: true,
       tournamentId,
-      team: { id: teamId, name: finalName },
+      team: { id: teamId, name: finalName, division },
     });
   } catch (err) {
     await client.query("ROLLBACK");

@@ -347,6 +347,7 @@ export default function PlayersPage() {
         .map((t) => ({
           id: String(t.id ?? t.teamId ?? ""),
           name: t.name ?? t.teamName ?? "",
+          division: t.division ?? t.teamDivision ?? t.tournament_team_division,
           players: Array.isArray(t.players) ? t.players : [],
         }))
         .filter((t) => t.id);

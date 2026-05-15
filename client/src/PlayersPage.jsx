@@ -58,6 +58,21 @@ function formatDupr(dupr) {
   return n.toFixed(2);
 }
 
+function playerDivision(player) {
+  const duprVal =
+    player.duprRating ?? player.dupr_rating ?? player.dupr ?? null;
+  const selfRating = (player.selfRating ?? player.self_rating ?? "")
+    .toString()
+    .toLowerCase();
+
+  const n = Number(duprVal);
+
+  if (Number.isFinite(n) && n >= 4.0) return "ADVANCED";
+  if (selfRating === "advanced") return "ADVANCED";
+
+  return "BEGINNER_INTERMEDIATE";
+}
+
 function teamDivision(team) {
   return (
     team.division ??
@@ -65,6 +80,19 @@ function teamDivision(team) {
     team.tournament_team_division ??
     "BEGINNER_INTERMEDIATE"
   );
+}
+
+function divisionLabel(division) {
+  if (division === "ADVANCED") return "Advanced Division";
+  return "Beginner / Intermediate Division";
+}
+
+function divisionDescription(division) {
+  if (division === "ADVANCED") {
+    return "Players with a DUPR rating of 4.0 or higher, or self-rated advanced.";
+  }
+
+  return "Players below 4.0 DUPR, beginner players, and intermediate players.";
 }
 
 function formatSelfRating(value) {
@@ -786,91 +814,160 @@ export default function PlayersPage() {
                     Add Player
                   </Button>
                 </Box>
-              ) : isMobile ? (
-                <PlayersCardList
-                  players={filteredPlayers}
-                  onDelete={deletePlayer}
-                  playerTeamMap={playerTeamMap}
-                />
               ) : (
-                <Box overflowX="auto">
-                  <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Name</Table.ColumnHeader>
-                        <Table.ColumnHeader>DUPR</Table.ColumnHeader>
-                        <Table.ColumnHeader>Tier</Table.ColumnHeader>
-                        <Table.ColumnHeader>Skill Input</Table.ColumnHeader>
-                        <Table.ColumnHeader>Team</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
+                <Stack gap={5}>
+                  {[
+                    {
+                      division: "BEGINNER_INTERMEDIATE",
+                      players: beginnerIntermediatePlayers,
+                    },
+                    {
+                      division: "ADVANCED",
+                      players: advancedPlayers,
+                    },
+                  ].map(({ division, players }) => (
+                    <Box
+                      key={division}
+                      border="1px solid"
+                      borderColor="border"
+                      borderRadius="2xl"
+                      bg="cream.50"
+                      p={{ base: 3, md: 4 }}
+                    >
+                      <Flex
+                        justify="space-between"
+                        align={{ base: "start", md: "center" }}
+                        direction={{ base: "column", md: "row" }}
+                        gap={2}
+                        mb={4}
+                      >
+                        <Box>
+                          <Heading size="sm">{divisionLabel(division)}</Heading>
+                          <Text fontSize="sm" opacity={0.75} mt={1}>
+                            {divisionDescription(division)}
+                          </Text>
+                        </Box>
 
-                    <Table.Body>
-                      {filteredPlayers.map((p) => {
-                        const duprVal =
-                          p.duprRating ?? p.dupr_rating ?? p.dupr ?? null;
-                        const tier = p.duprTier ?? duprTierFromNumber(duprVal);
-                        const teamName = playerTeamMap.get(String(p.id)) ?? "";
-                        const selfRating = p.selfRating ?? p.self_rating ?? "";
-                        const skillSource =
-                          p.skillSource ?? p.skill_source ?? "";
+                        <Badge
+                          variant={division === "ADVANCED" ? "pickle" : "club"}
+                        >
+                          {players.length} players
+                        </Badge>
+                      </Flex>
 
-                        return (
-                          <Table.Row key={p.id ?? p.email ?? p.name}>
-                            <Table.Cell fontWeight="600">
-                              {p.name ?? "Unnamed"}
-                            </Table.Cell>
+                      {players.length === 0 ? (
+                        <Box
+                          border="1px dashed"
+                          borderColor="border"
+                          borderRadius="xl"
+                          p={5}
+                          bg="white"
+                          textAlign="center"
+                        >
+                          <Text opacity={0.7}>
+                            No players in this division yet.
+                          </Text>
+                        </Box>
+                      ) : isMobile ? (
+                        <PlayersCardList
+                          players={players}
+                          onDelete={deletePlayer}
+                          playerTeamMap={playerTeamMap}
+                        />
+                      ) : (
+                        <Box overflowX="auto">
+                          <Table.Root size="md" variant="outline">
+                            <Table.Header>
+                              <Table.Row>
+                                <Table.ColumnHeader>Name</Table.ColumnHeader>
+                                <Table.ColumnHeader>DUPR</Table.ColumnHeader>
+                                <Table.ColumnHeader>Tier</Table.ColumnHeader>
+                                <Table.ColumnHeader>
+                                  Skill Input
+                                </Table.ColumnHeader>
+                                <Table.ColumnHeader>Team</Table.ColumnHeader>
+                                <Table.ColumnHeader textAlign="end">
+                                  Actions
+                                </Table.ColumnHeader>
+                              </Table.Row>
+                            </Table.Header>
 
-                            <Table.Cell>
-                              <Badge variant="club">
-                                {formatDupr(duprVal)}
-                              </Badge>
-                            </Table.Cell>
+                            <Table.Body>
+                              {players.map((p) => {
+                                const duprVal =
+                                  p.duprRating ??
+                                  p.dupr_rating ??
+                                  p.dupr ??
+                                  null;
+                                const tier =
+                                  p.duprTier ?? duprTierFromNumber(duprVal);
+                                const teamName =
+                                  playerTeamMap.get(String(p.id)) ?? "";
+                                const selfRating =
+                                  p.selfRating ?? p.self_rating ?? "";
+                                const skillSource =
+                                  p.skillSource ?? p.skill_source ?? "";
 
-                            <Table.Cell>
-                              <Badge variant="club">{tier}</Badge>
-                            </Table.Cell>
+                                return (
+                                  <Table.Row key={p.id ?? p.email ?? p.name}>
+                                    <Table.Cell fontWeight="600">
+                                      {p.name ?? "Unnamed"}
+                                    </Table.Cell>
 
-                            <Table.Cell>
-                              {skillSource === "self_rating" && selfRating ? (
-                                <Badge variant="outline">
-                                  {formatSelfRating(selfRating)}
-                                </Badge>
-                              ) : (
-                                <Text opacity={0.6}>
-                                  Official / entered DUPR
-                                </Text>
-                              )}
-                            </Table.Cell>
+                                    <Table.Cell>
+                                      <Badge variant="club">
+                                        {formatDupr(duprVal)}
+                                      </Badge>
+                                    </Table.Cell>
 
-                            <Table.Cell>
-                              {teamName ? (
-                                <Badge variant="pickle">{teamName}</Badge>
-                              ) : (
-                                <Text opacity={0.6}>—</Text>
-                              )}
-                            </Table.Cell>
+                                    <Table.Cell>
+                                      <Badge variant="club">{tier}</Badge>
+                                    </Table.Cell>
 
-                            <Table.Cell textAlign="end">
-                              {!p._optimistic ? (
-                                <IconButton
-                                  aria-label="Delete player"
-                                  variant="outline"
-                                  onClick={() => deletePlayer(p.id)}
-                                >
-                                  <Trash2 size={16} />
-                                </IconButton>
-                              ) : null}
-                            </Table.Cell>
-                          </Table.Row>
-                        );
-                      })}
-                    </Table.Body>
-                  </Table.Root>
-                </Box>
+                                    <Table.Cell>
+                                      {skillSource === "self_rating" &&
+                                      selfRating ? (
+                                        <Badge variant="outline">
+                                          {formatSelfRating(selfRating)}
+                                        </Badge>
+                                      ) : (
+                                        <Text opacity={0.6}>
+                                          Official / entered DUPR
+                                        </Text>
+                                      )}
+                                    </Table.Cell>
+
+                                    <Table.Cell>
+                                      {teamName ? (
+                                        <Badge variant="pickle">
+                                          {teamName}
+                                        </Badge>
+                                      ) : (
+                                        <Text opacity={0.6}>—</Text>
+                                      )}
+                                    </Table.Cell>
+
+                                    <Table.Cell textAlign="end">
+                                      {!p._optimistic ? (
+                                        <IconButton
+                                          aria-label="Delete player"
+                                          variant="outline"
+                                          onClick={() => deletePlayer(p.id)}
+                                        >
+                                          <Trash2 size={16} />
+                                        </IconButton>
+                                      ) : null}
+                                    </Table.Cell>
+                                  </Table.Row>
+                                );
+                              })}
+                            </Table.Body>
+                          </Table.Root>
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+                </Stack>
               )}
             </Box>
           </Box>
@@ -969,8 +1066,7 @@ export default function PlayersPage() {
                   {teamsError}
                 </Text>
               ) : null}
-
-              <Box mt={4} overflowX="auto">
+              <Box mt={4}>
                 {teams.length === 0 ? (
                   <Box
                     border="1px dashed"
@@ -995,65 +1091,155 @@ export default function PlayersPage() {
                       Create Team
                     </Button>
                   </Box>
-                ) : isMobile ? (
-                  <TeamsCardList
-                    teams={teams}
-                    onRename={openRenameModal}
-                    onDelete={deleteTeam}
-                    deletingTeamId={deletingTeamId}
-                    tid={tid}
-                  />
                 ) : (
-                  <Table.Root size="md" variant="outline">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Team</Table.ColumnHeader>
-                        <Table.ColumnHeader>Players</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">
-                          Actions
-                        </Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
-
-                    <Table.Body>
-                      {teams.map((t) => (
-                        <Table.Row key={t.id}>
-                          <Table.Cell fontWeight="700">{t.name}</Table.Cell>
-
-                          <Table.Cell>
-                            <Text fontWeight="600">
-                              {(t.players ?? [])
-                                .map((p) => p.name)
-                                .filter(Boolean)
-                                .join(" / ") || "—"}
+                  <Stack gap={5}>
+                    {[
+                      {
+                        division: "BEGINNER_INTERMEDIATE",
+                        teams: beginnerIntermediateTeams,
+                      },
+                      {
+                        division: "ADVANCED",
+                        teams: advancedTeams,
+                      },
+                    ].map(({ division, teams }) => (
+                      <Box
+                        key={division}
+                        border="1px solid"
+                        borderColor="border"
+                        borderRadius="2xl"
+                        bg="cream.50"
+                        p={{ base: 3, md: 4 }}
+                      >
+                        <Flex
+                          justify="space-between"
+                          align={{ base: "start", md: "center" }}
+                          direction={{ base: "column", md: "row" }}
+                          gap={2}
+                          mb={4}
+                        >
+                          <Box>
+                            <Heading size="sm">
+                              {divisionLabel(division)} Teams
+                            </Heading>
+                            <Text fontSize="sm" opacity={0.75} mt={1}>
+                              Teams stay within their division when matches are
+                              generated.
                             </Text>
-                          </Table.Cell>
+                          </Box>
 
-                          <Table.Cell textAlign="end">
-                            <HStack justify="flex-end" gap={2} wrap="wrap">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openRenameModal(t)}
-                                isDisabled={!tid}
-                              >
-                                Rename
-                              </Button>
+                          <Badge
+                            variant={
+                              division === "ADVANCED" ? "pickle" : "club"
+                            }
+                          >
+                            {teams.length} teams
+                          </Badge>
+                        </Flex>
 
-                              <IconButton
-                                aria-label="Delete team"
-                                variant="outline"
-                                onClick={() => deleteTeam(t.id)}
-                                isDisabled={!tid || deletingTeamId === t.id}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
-                            </HStack>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Root>
+                        {teams.length === 0 ? (
+                          <Box
+                            border="1px dashed"
+                            borderColor="border"
+                            borderRadius="xl"
+                            p={5}
+                            bg="white"
+                            textAlign="center"
+                          >
+                            <Text opacity={0.7}>
+                              No teams in this division yet.
+                            </Text>
+                          </Box>
+                        ) : isMobile ? (
+                          <TeamsCardList
+                            teams={teams}
+                            onRename={openRenameModal}
+                            onDelete={deleteTeam}
+                            deletingTeamId={deletingTeamId}
+                            tid={tid}
+                          />
+                        ) : (
+                          <Box overflowX="auto">
+                            <Table.Root size="md" variant="outline">
+                              <Table.Header>
+                                <Table.Row>
+                                  <Table.ColumnHeader>Team</Table.ColumnHeader>
+                                  <Table.ColumnHeader>
+                                    Players
+                                  </Table.ColumnHeader>
+                                  <Table.ColumnHeader>
+                                    Division
+                                  </Table.ColumnHeader>
+                                  <Table.ColumnHeader textAlign="end">
+                                    Actions
+                                  </Table.ColumnHeader>
+                                </Table.Row>
+                              </Table.Header>
+
+                              <Table.Body>
+                                {teams.map((t) => (
+                                  <Table.Row key={t.id}>
+                                    <Table.Cell fontWeight="700">
+                                      {t.name}
+                                    </Table.Cell>
+
+                                    <Table.Cell>
+                                      <Text fontWeight="600">
+                                        {(t.players ?? [])
+                                          .map((p) => p.name)
+                                          .filter(Boolean)
+                                          .join(" / ") || "—"}
+                                      </Text>
+                                    </Table.Cell>
+
+                                    <Table.Cell>
+                                      <Badge
+                                        variant={
+                                          division === "ADVANCED"
+                                            ? "pickle"
+                                            : "club"
+                                        }
+                                      >
+                                        {divisionLabel(division)}
+                                      </Badge>
+                                    </Table.Cell>
+
+                                    <Table.Cell textAlign="end">
+                                      <HStack
+                                        justify="flex-end"
+                                        gap={2}
+                                        wrap="wrap"
+                                      >
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => openRenameModal(t)}
+                                          isDisabled={!tid}
+                                        >
+                                          Rename
+                                        </Button>
+
+                                        <IconButton
+                                          aria-label="Delete team"
+                                          variant="outline"
+                                          onClick={() => deleteTeam(t.id)}
+                                          isDisabled={
+                                            !tid || deletingTeamId === t.id
+                                          }
+                                        >
+                                          <Trash2 size={16} />
+                                        </IconButton>
+                                      </HStack>
+                                    </Table.Cell>
+                                  </Table.Row>
+                                ))}
+                              </Table.Body>
+                            </Table.Root>
+                          </Box>
+                        )}
+                      </Box>
+                    ))}
+                  </Stack>
                 )}
               </Box>
             </Card.Body>

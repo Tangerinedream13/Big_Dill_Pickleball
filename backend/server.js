@@ -923,19 +923,29 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
     const id = String(req.params.id || "").toUpperCase();
 
-    if (id !== "FINAL" && id !== "THIRD") {
-      return res
-        .status(400)
-        .json({ error: "Invalid finals id. Use FINAL or THIRD." });
+    const validFinalCodes = ["BI-FINAL", "BI-THIRD", "ADV-FINAL", "ADV-THIRD"];
+
+    if (!validFinalCodes.includes(id)) {
+      return res.status(400).json({
+        error:
+          "Invalid finals id. Use BI-FINAL, BI-THIRD, ADV-FINAL, or ADV-THIRD.",
+      });
     }
+
+    const phase = id.endsWith("FINAL") ? "FINAL" : "THIRD";
 
     const mRes = await pool.query(
       `
-      select team_a_id as "teamAId", team_b_id as "teamBId"
+      select
+        coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
+        team_a_id as "teamAId",
+        team_b_id as "teamBId"
       from matches
-      where tournament_id = $1 and code = $2 and phase = $3
+      where tournament_id = $1
+        and code = $2
+        and phase = $3
       `,
-      [tournamentId, id, id]
+      [tournamentId, id, phase]
     );
 
     if (mRes.rowCount === 0) {
@@ -948,7 +958,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     const winnerIdRaw = req.body?.winnerId;
 
     if (clear) {
-      await clearMatch({ tournamentId, phase: id, code: id });
+      await clearMatch({ tournamentId, phase, code: id });
       return sendState(tournamentId, res);
     }
 
@@ -958,18 +968,27 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       winnerIdRaw !== ""
     ) {
       const w = Number(winnerIdRaw);
+
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
       }
+
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
+
       if (w !== a && w !== b) {
         return res
           .status(400)
           .json({ error: "winnerId must be Team A or Team B for this match." });
       }
 
-      await setWinnerOnly({ tournamentId, phase: id, code: id, winnerId: w });
+      await setWinnerOnly({
+        tournamentId,
+        phase,
+        code: id,
+        winnerId: w,
+      });
+
       return sendState(tournamentId, res);
     }
 
@@ -979,13 +998,14 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       playTo: 15,
       winBy: 2,
     });
+
     if (msg) return res.status(400).json({ error: msg });
 
     const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
 
     await setScore({
       tournamentId,
-      phase: id,
+      phase,
       code: id,
       scoreA,
       scoreB,

@@ -355,6 +355,37 @@ function computeQueue(matches) {
   };
 }
 
+function spreadOutMatches(matches) {
+  const remaining = Array.isArray(matches) ? [...matches] : [];
+  const ordered = [];
+  const recentlyPlayed = [];
+
+  while (remaining.length > 0) {
+    let index = remaining.findIndex((m) => {
+      const teamA = String(m.teamAId);
+      const teamB = String(m.teamBId);
+
+      return !recentlyPlayed.includes(teamA) && !recentlyPlayed.includes(teamB);
+    });
+
+    if (index === -1) index = 0;
+
+    const [next] = remaining.splice(index, 1);
+    ordered.push(next);
+
+    recentlyPlayed.push(String(next.teamAId), String(next.teamBId));
+
+    while (recentlyPlayed.length > 4) {
+      recentlyPlayed.shift();
+    }
+  }
+
+  return ordered.map((m, idx) => ({
+    ...m,
+    id: `RR-${idx + 1}`,
+  }));
+}
+
 async function finalsAreScored(tournamentId) {
   const r = await pool.query(
     `
@@ -1111,7 +1142,8 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     const startTime = parseISODate(req.body?.startTimeISO);
     const endTime = parseISODate(req.body?.endTimeISO);
 
-    const rrMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
+    const rawMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
+    const rrMatches = spreadOutMatches(rawMatches);
 
     await pool.query(
       `delete from matches where tournament_id = $1 and phase = 'RR';`,

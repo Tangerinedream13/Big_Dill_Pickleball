@@ -460,16 +460,17 @@ function spreadOutMatches(matches) {
   }));
 }
 
-async function finalsAreScored(tournamentId) {
+async function finalsAreScored(tournamentId, division) {
   const r = await pool.query(
     `
     select code, score_a, score_b, winner_id
     from matches
     where tournament_id = $1
       and phase in ('FINAL','THIRD')
-    limit 1;
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2
+    limit 2;
     `,
-    [tournamentId]
+    [tournamentId, division]
   );
 
   if (r.rowCount === 0) return false;
@@ -528,10 +529,16 @@ async function setScore({
   );
 }
 
-async function ensureFinalsFromSemis(tournamentId) {
-  const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-  const sf1 = semis.find((m) => String(m.id) === "SF1");
-  const sf2 = semis.find((m) => String(m.id) === "SF2");
+async function ensureFinalsFromSemis(tournamentId, division) {
+  const semis = await getMatchesForTournamentByPhase(
+    tournamentId,
+    ["SF"],
+    division
+  );
+
+  const prefix = divisionPrefix(division);
+  const sf1 = semis.find((m) => String(m.id) === `${prefix}-SF1`);
+  const sf2 = semis.find((m) => String(m.id) === `${prefix}-SF2`);
 
   if (!sf1?.winnerId || !sf2?.winnerId) return;
 
@@ -546,21 +553,38 @@ async function ensureFinalsFromSemis(tournamentId) {
   await pool.query(
     `
     delete from matches
-    where tournament_id = $1 and phase in ('FINAL','THIRD');
+    where tournament_id = $1
+      and phase in ('FINAL','THIRD')
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
     `,
-    [tournamentId]
+    [tournamentId, division]
   );
 
   await pool.query(
     `
     insert into matches (
-      tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
+      tournament_id,
+      code,
+      phase,
+      division,
+      team_a_id,
+      team_b_id,
+      status
     )
     values
-      ($1, 'FINAL', 'FINAL', $2, $3, 'pending'),
-      ($1, 'THIRD', 'THIRD', $4, $5, 'pending');
+      ($1, $2, 'FINAL', $3, $4, $5, 'pending'),
+      ($1, $6, 'THIRD', $3, $7, $8, 'pending');
     `,
-    [tournamentId, sf1.winnerId, sf2.winnerId, sf1Loser, sf2Loser]
+    [
+      tournamentId,
+      `${prefix}-FINAL`,
+      division,
+      sf1.winnerId,
+      sf2.winnerId,
+      `${prefix}-THIRD`,
+      sf1Loser,
+      sf2Loser,
+    ]
   );
 }
 
@@ -782,33 +806,41 @@ app.post("/api/playoffs/generate", async (req, res) => {
 /* -----------------------------
   Playoffs: Score Semis
 ------------------------------ */
+
 app.post("/api/playoffs/semis/:id/score", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
     const id = String(req.params.id || "").toUpperCase();
 
-    if (id !== "SF1" && id !== "SF2") {
-      return res
-        .status(400)
-        .json({ error: "Invalid semifinal id. Use SF1 or SF2." });
+    const validSemiCodes = ["BI-SF1", "BI-SF2", "ADV-SF1", "ADV-SF2"];
+    if (!validSemiCodes.includes(id)) {
+      return res.status(400).json({
+        error: "Invalid semifinal id. Use BI-SF1, BI-SF2, ADV-SF1, or ADV-SF2.",
+      });
     }
 
     const mRes = await pool.query(
       `
-      select team_a_id as "teamAId", team_b_id as "teamBId"
+      select
+        coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
+        team_a_id as "teamAId",
+        team_b_id as "teamBId"
       from matches
       where tournament_id = $1 and phase = 'SF' and code = $2
       `,
       [tournamentId, id]
     );
+
     if (mRes.rowCount === 0) {
       return res.status(404).json({ error: `Semifinal not found: ${id}` });
     }
+
     const m = mRes.rows[0];
 
-    if (await finalsAreScored(tournamentId)) {
+    if (await finalsAreScored(tournamentId, m.division)) {
       return res.status(409).json({
-        error: "Finals already scored. Reset playoffs before changing semis.",
+        error:
+          "Finals already scored for this division. Reset playoffs before changing semis.",
       });
     }
 
@@ -821,9 +853,11 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       await pool.query(
         `
         delete from matches
-        where tournament_id = $1 and phase in ('FINAL','THIRD');
+        where tournament_id = $1
+          and phase in ('FINAL','THIRD')
+          and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
         `,
-        [tournamentId]
+        [tournamentId, m.division]
       );
 
       return sendState(tournamentId, res);
@@ -838,8 +872,10 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
       }
+
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
+
       if (w !== a && w !== b) {
         return res
           .status(400)
@@ -847,7 +883,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       }
 
       await setWinnerOnly({ tournamentId, phase: "SF", code: id, winnerId: w });
-      await ensureFinalsFromSemis(tournamentId);
+      await ensureFinalsFromSemis(tournamentId, m.division);
 
       return sendState(tournamentId, res);
     }
@@ -871,7 +907,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       winnerId,
     });
 
-    await ensureFinalsFromSemis(tournamentId);
+    await ensureFinalsFromSemis(tournamentId, m.division);
 
     return sendState(tournamentId, res);
   } catch (err) {
@@ -879,7 +915,6 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     res.status(500).json({ error: errToMessage(err) });
   }
 });
-
 /* -----------------------------
   Playoffs: Score Finals + Third
 ------------------------------ */

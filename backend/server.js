@@ -1351,7 +1351,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     if (gamesPerTeam > maxGamesPerTeam) {
       return res.status(409).json({
-        error: `gamesPerTeam=${gamesPerTeam} is too large for ${teams.length} teams (max is ${maxGamesPerTeam}).`,
+        error: `gamesPerTeam=${gamesPerTeam} is too large for one of the divisions (max is ${maxGamesPerTeam}).`,
       });
     }
 
@@ -1459,11 +1459,11 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     }
 
     res.json({
-      teams,
+      teams: allTeams,
       matches: scheduled.map((m) => ({ ...m, status: "pending" })),
       tournamentId,
       meta: {
-        teamsCount: teams.length,
+        teamsCount: allTeams.length,
         gamesPerTeam,
         maxGamesPerTeam,
         rrMatchesCount: scheduled.length,

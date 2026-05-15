@@ -277,12 +277,27 @@ async function getTeamsForTournament(tournamentId, division = null) {
   return r.rows;
 }
 
-async function getMatchesForTournamentByPhase(tournamentId, phases) {
+async function getMatchesForTournamentByPhase(
+  tournamentId,
+  phases,
+  division = null
+) {
+  const params = [tournamentId, phases];
+
+  let divisionFilter = "";
+  if (division) {
+    params.push(division);
+    divisionFilter = `
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $3
+    `;
+  }
+
   const r = await pool.query(
     `
     select
       code,
       phase,
+      coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
       team_a_id as "teamAId",
       team_b_id as "teamBId",
       score_a as "scoreA",
@@ -294,22 +309,25 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     from matches
     where tournament_id = $1
       and phase = any($2::text[])
+      ${divisionFilter}
     order by
+      coalesce(division, 'BEGINNER_INTERMEDIATE'),
       case
-        when code like 'RR-%' then 1
-        when code like 'SF%' then 2
-        when code = 'FINAL' then 3
-        when code = 'THIRD' then 4
+        when code like '%RR-%' or code like 'RR-%' then 1
+        when code like '%SF%' or code like 'SF%' then 2
+        when code like '%FINAL' or code = 'FINAL' then 3
+        when code like '%THIRD' or code = 'THIRD' then 4
         else 9
       end,
       code;
     `,
-    [tournamentId, phases]
+    params
   );
 
   return r.rows.map((m) => ({
     id: m.code,
     phase: m.phase,
+    division: m.division,
     teamAId: m.teamAId,
     teamBId: m.teamBId,
     scoreA: m.scoreA,

@@ -834,6 +834,7 @@ export default function PlayersPage() {
                       borderRadius="2xl"
                       bg="cream.50"
                       p={{ base: 3, md: 4 }}
+                      overflow="hidden"
                     >
                       <Flex
                         justify="space-between"
@@ -876,7 +877,11 @@ export default function PlayersPage() {
                           playerTeamMap={playerTeamMap}
                         />
                       ) : (
-                        <Box overflowX="auto">
+                        <Box
+                          overflowX="auto"
+                          borderRadius="xl"
+                          overflow="hidden"
+                        >
                           <Table.Root size="md" variant="outline">
                             <Table.Header>
                               <Table.Row>
@@ -1111,6 +1116,7 @@ export default function PlayersPage() {
                         borderRadius="2xl"
                         bg="cream.50"
                         p={{ base: 3, md: 4 }}
+                        overflow="hidden"
                       >
                         <Flex
                           justify="space-between"
@@ -1160,7 +1166,11 @@ export default function PlayersPage() {
                             tid={tid}
                           />
                         ) : (
-                          <Box overflowX="auto">
+                          <Box
+                            overflowX="auto"
+                            borderRadius="xl"
+                            overflow="hidden"
+                          >
                             <Table.Root size="md" variant="outline">
                               <Table.Header>
                                 <Table.Row>

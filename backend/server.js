@@ -132,6 +132,41 @@ function duprLabel(dupr) {
   return "New (under 2.0)";
 }
 
+function divisionFromRating({ duprRating, selfRating }) {
+  const dupr = parseDupr(duprRating);
+
+  if (dupr != null) {
+    return dupr >= 4.0 ? "ADVANCED" : "BEGINNER_INTERMEDIATE";
+  }
+
+  const self = String(selfRating || "").toLowerCase();
+
+  if (self.includes("advanced")) return "ADVANCED";
+
+  return "BEGINNER_INTERMEDIATE";
+}
+
+function divisionLabel(division) {
+  if (division === "ADVANCED") return "Advanced";
+  if (division === "BEGINNER_INTERMEDIATE") {
+    return "Beginner / Intermediate";
+  }
+  return "Beginner / Intermediate";
+}
+
+function teamDivisionFromPlayers(players) {
+  const hasAdvanced = players.some((p) => {
+    return (
+      divisionFromRating({
+        duprRating: p.duprRating ?? p.dupr_rating,
+        selfRating: p.selfRating ?? p.self_rating,
+      }) === "ADVANCED"
+    );
+  });
+
+  return hasAdvanced ? "ADVANCED" : "BEGINNER_INTERMEDIATE";
+}
+
 function validatePickleballScore(
   scoreA,
   scoreB,

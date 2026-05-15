@@ -143,6 +143,21 @@ function hasAnyScoreOrForfeit(m) {
     m?.scoreB !== null && m?.scoreB !== undefined && m?.scoreB !== "";
   return aHas || bHas || isForfeitRR(m);
 }
+const DIVISIONS = ["BEGINNER_INTERMEDIATE", "ADVANCED"];
+
+function divisionLabel(division) {
+  if (division === "ADVANCED") return "Advanced Division";
+  return "Beginner / Intermediate Division";
+}
+
+function teamDivision(team) {
+  return (
+    team?.division ??
+    team?.teamDivision ??
+    team?.tournament_team_division ??
+    "BEGINNER_INTERMEDIATE"
+  );
+}
 
 const phaseCollection = createListCollection({
   items: [
@@ -686,6 +701,27 @@ export default function MatchSchedule() {
   }, [teamsById]);
 
   const standings = state?.standings ?? [];
+
+  const standingsByDivision = useMemo(() => {
+    const teams = Array.from(teamsById.values());
+
+    return DIVISIONS.map((division) => {
+      const divisionTeamIds = new Set(
+        teams
+          .filter((team) => teamDivision(team) === division)
+          .map((team) => String(team.id))
+      );
+
+      const divisionStandings = standings.filter((standing) =>
+        divisionTeamIds.has(String(standing.teamId))
+      );
+
+      return {
+        division,
+        standings: divisionStandings,
+      };
+    });
+  }, [teamsById, standings]);
 
   const seedByTeamId = useMemo(() => {
     const map = new Map();
@@ -1613,53 +1649,127 @@ export default function MatchSchedule() {
 
                   <Box mt={3}>
                     <Tabs.Content value="rr">
-                      {standings.length > 0 ? (
-                        <Table.Root size="sm" variant="outline">
-                          <Table.Header>
-                            <Table.Row>
-                              <Table.ColumnHeader>#</Table.ColumnHeader>
-                              <Table.ColumnHeader>Team</Table.ColumnHeader>
-                              <Table.ColumnHeader>Wins</Table.ColumnHeader>
-                              <Table.ColumnHeader>Losses</Table.ColumnHeader>
-                              <Table.ColumnHeader>PD</Table.ColumnHeader>
-                            </Table.Row>
-                          </Table.Header>
-                          <Table.Body>
-                            {standings.map((s, idx) => {
-                              const played = s.gamesPlayed ?? s.played ?? null;
-                              const losses =
-                                played != null
-                                  ? Math.max(
-                                      0,
-                                      Number(played) - Number(s.wins ?? 0)
-                                    )
-                                  : "—";
-                              return (
-                                <Table.Row key={String(s.teamId)}>
-                                  <Table.Cell>{idx + 1}</Table.Cell>
-                                  <Table.Cell fontWeight="600">
-                                    <HStack gap={2}>
-                                      <Text>{teamDisplay(s.teamId)}</Text>
-                                      {scratchedTeamIds.has(
-                                        String(s.teamId)
-                                      ) ? (
-                                        <Badge variant="outline" opacity={0.6}>
-                                          Scratched
-                                        </Badge>
-                                      ) : null}
-                                    </HStack>
-                                  </Table.Cell>
-                                  <Table.Cell>{s.wins}</Table.Cell>
-                                  <Table.Cell>{losses}</Table.Cell>
-                                  <Table.Cell>{s.pointDiff}</Table.Cell>
-                                </Table.Row>
-                              );
-                            })}
-                          </Table.Body>
-                        </Table.Root>
-                      ) : (
-                        <Text opacity={0.7}>No round robin standings yet.</Text>
-                      )}
+                      <Stack gap={5}>
+                        {standingsByDivision.map(({ division, standings }) => (
+                          <Box
+                            key={division}
+                            border="1px solid"
+                            borderColor="border"
+                            borderRadius="2xl"
+                            bg="cream.50"
+                            p={{ base: 3, md: 4 }}
+                          >
+                            <Flex
+                              justify="space-between"
+                              align={{ base: "start", md: "center" }}
+                              direction={{ base: "column", md: "row" }}
+                              gap={2}
+                              mb={4}
+                            >
+                              <Box>
+                                <Heading size="sm">
+                                  {divisionLabel(division)} Standings
+                                </Heading>
+                                <Text fontSize="sm" opacity={0.75} mt={1}>
+                                  Standings are calculated only from teams in
+                                  this division.
+                                </Text>
+                              </Box>
+
+                              <Badge
+                                variant={
+                                  division === "ADVANCED" ? "pickle" : "club"
+                                }
+                              >
+                                {standings.length} teams
+                              </Badge>
+                            </Flex>
+
+                            {standings.length > 0 ? (
+                              <Box
+                                overflowX="auto"
+                                borderRadius="xl"
+                                overflow="hidden"
+                                bg="white"
+                              >
+                                <Table.Root size="sm" variant="outline">
+                                  <Table.Header>
+                                    <Table.Row>
+                                      <Table.ColumnHeader>#</Table.ColumnHeader>
+                                      <Table.ColumnHeader>
+                                        Team
+                                      </Table.ColumnHeader>
+                                      <Table.ColumnHeader>
+                                        Wins
+                                      </Table.ColumnHeader>
+                                      <Table.ColumnHeader>
+                                        Losses
+                                      </Table.ColumnHeader>
+                                      <Table.ColumnHeader>
+                                        PD
+                                      </Table.ColumnHeader>
+                                    </Table.Row>
+                                  </Table.Header>
+
+                                  <Table.Body>
+                                    {standings.map((s, idx) => {
+                                      const played =
+                                        s.gamesPlayed ?? s.played ?? null;
+                                      const losses =
+                                        played != null
+                                          ? Math.max(
+                                              0,
+                                              Number(played) -
+                                                Number(s.wins ?? 0)
+                                            )
+                                          : "—";
+
+                                      return (
+                                        <Table.Row key={String(s.teamId)}>
+                                          <Table.Cell>{idx + 1}</Table.Cell>
+                                          <Table.Cell fontWeight="600">
+                                            <HStack gap={2}>
+                                              <Text>
+                                                {teamDisplay(s.teamId)}
+                                              </Text>
+                                              {scratchedTeamIds.has(
+                                                String(s.teamId)
+                                              ) ? (
+                                                <Badge
+                                                  variant="outline"
+                                                  opacity={0.6}
+                                                >
+                                                  Scratched
+                                                </Badge>
+                                              ) : null}
+                                            </HStack>
+                                          </Table.Cell>
+                                          <Table.Cell>{s.wins}</Table.Cell>
+                                          <Table.Cell>{losses}</Table.Cell>
+                                          <Table.Cell>{s.pointDiff}</Table.Cell>
+                                        </Table.Row>
+                                      );
+                                    })}
+                                  </Table.Body>
+                                </Table.Root>
+                              </Box>
+                            ) : (
+                              <Box
+                                border="1px dashed"
+                                borderColor="border"
+                                borderRadius="xl"
+                                p={5}
+                                bg="white"
+                                textAlign="center"
+                              >
+                                <Text opacity={0.7}>
+                                  No standings in this division yet.
+                                </Text>
+                              </Box>
+                            )}
+                          </Box>
+                        ))}
+                      </Stack>
                     </Tabs.Content>
 
                     <Tabs.Content value="sf">

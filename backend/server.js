@@ -1039,6 +1039,20 @@ app.post(
           "One of those players is already on a team in this tournament."
         );
       }
+      const playersForDivision = await client.query(
+        `
+        select
+          id,
+          name,
+          dupr_rating as "duprRating",
+          self_rating as "selfRating"
+        from players
+        where id in ($1, $2);
+        `,
+        [playerAId, playerBId]
+      );
+
+      const division = teamDivisionFromPlayers(playersForDivision.rows);
 
       let finalName = requestedName;
       if (!finalName) {
@@ -1050,8 +1064,12 @@ app.post(
       }
 
       const teamRow = await client.query(
-        `insert into teams(name) values ($1) returning id, name;`,
-        [finalName]
+        `
+        insert into teams(name, division)
+        values ($1, $2)
+        returning id, name, division;
+        `,
+        [finalName, division]
       );
       const teamId = teamRow.rows[0].id;
 
@@ -1061,15 +1079,18 @@ app.post(
       );
 
       await client.query(
-        `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
-        [tid, teamId]
+        `
+        insert into tournament_teams(tournament_id, team_id, division)
+        values ($1, $2, $3);
+        `,
+        [tid, teamId, division]
       );
 
       await client.query("COMMIT");
       res.json({
         ok: true,
         tournamentId: tid,
-        team: { id: teamId, name: finalName },
+        team: { id: teamId, name: finalName, division },
       });
     } catch (err) {
       await client.query("ROLLBACK");

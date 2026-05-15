@@ -312,26 +312,46 @@ function decoratePlacementsWithTeamNames(placements, teams) {
 }
 
 function computeQueue(matches) {
-  const busyTeams = new Set();
+  const allMatches = Array.isArray(matches) ? matches : [];
 
-  for (const m of matches) {
-    if (m.status === "on_court") {
-      busyTeams.add(String(m.teamAId));
-      busyTeams.add(String(m.teamBId));
-    }
+  const onCourt = allMatches.filter((m) => m.status === "on_court");
+
+  // Teams currently playing or already queued should not appear again.
+  const unavailableTeams = new Set();
+
+  for (const m of onCourt) {
+    if (m.teamAId != null) unavailableTeams.add(String(m.teamAId));
+    if (m.teamBId != null) unavailableTeams.add(String(m.teamBId));
   }
 
-  const playable = matches.filter((m) => {
-    if (m.status !== "pending") return false;
-    if (busyTeams.has(String(m.teamAId))) return false;
-    if (busyTeams.has(String(m.teamBId))) return false;
-    return true;
-  });
+  const playableQueue = [];
+
+  for (const m of allMatches) {
+    const status = m.status || (m.winnerId ? "completed" : "pending");
+
+    if (status !== "pending") continue;
+    if (m.teamAId == null || m.teamBId == null) continue;
+
+    const teamA = String(m.teamAId);
+    const teamB = String(m.teamBId);
+
+    // Skip if either team is currently playing OR already reserved in the queue.
+    if (unavailableTeams.has(teamA) || unavailableTeams.has(teamB)) continue;
+
+    playableQueue.push({
+      ...m,
+      status,
+    });
+
+    // Reserve these teams so they do not appear again in Up Soon.
+    unavailableTeams.add(teamA);
+    unavailableTeams.add(teamB);
+  }
 
   return {
-    currentlyOnCourt: matches.filter((m) => m.status === "on_court"),
-    nextOnDeck: playable[0] ?? null,
-    upSoon: playable.slice(1, 5),
+    currentlyOnCourt: onCourt,
+    nextOnDeck: playableQueue[0] ?? null,
+    upSoon: playableQueue.slice(1, 5),
   };
 }
 

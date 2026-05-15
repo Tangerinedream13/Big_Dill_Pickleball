@@ -248,17 +248,32 @@ async function resolveTournamentId(req) {
   return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
-async function getTeamsForTournament(tournamentId) {
+async function getTeamsForTournament(tournamentId, division = null) {
+  const params = [tournamentId];
+
+  let divisionFilter = "";
+  if (division) {
+    params.push(division);
+    divisionFilter = `
+      and coalesce(tt.division, teams.division, 'BEGINNER_INTERMEDIATE') = $2
+    `;
+  }
+
   const r = await pool.query(
     `
-    select teams.id, teams.name
+    select
+      teams.id,
+      teams.name,
+      coalesce(tt.division, teams.division, 'BEGINNER_INTERMEDIATE') as division
     from tournament_teams tt
     join teams on teams.id = tt.team_id
     where tt.tournament_id = $1
+      ${divisionFilter}
     order by coalesce(tt.seed, 999999), teams.id;
     `,
-    [tournamentId]
+    params
   );
+
   return r.rows;
 }
 

@@ -732,27 +732,35 @@ export default function MatchSchedule() {
   const semisComplete = semisExist && semis.every((m) => m.winnerId);
   const finalsExist = finals.length > 0;
 
-  const finalMatch = useMemo(() => {
-    return finals.find((m) => m.phase === "FINAL" || m.id === "FINAL") ?? null;
+  const finalMatches = useMemo(() => {
+    return finals.filter((m) => m.phase === "FINAL");
   }, [finals]);
 
-  const thirdMatch = useMemo(() => {
-    return finals.find((m) => m.phase === "THIRD" || m.id === "THIRD") ?? null;
+  const thirdMatches = useMemo(() => {
+    return finals.filter((m) => m.phase === "THIRD");
   }, [finals]);
+
+  const placementMatches = useMemo(() => {
+    return [...finalMatches, ...thirdMatches];
+  }, [finalMatches, thirdMatches]);
 
   const tournamentComplete = useMemo(() => {
-    if (!finalMatch && !thirdMatch) return false;
-    const finalDone = finalMatch ? !!finalMatch.winnerId : true;
-    const thirdDone = thirdMatch ? !!thirdMatch.winnerId : true;
-    return finalDone && thirdDone;
-  }, [finalMatch, thirdMatch]);
+    return (
+      placementMatches.length > 0 && placementMatches.every((m) => !!m.winnerId)
+    );
+  }, [placementMatches]);
 
   const finalsConfirmed = useMemo(() => {
-    return !!finalMatch?.winnerId || !!thirdMatch?.winnerId;
-  }, [finalMatch, thirdMatch]);
+    return placementMatches.some((m) => !!m.winnerId);
+  }, [placementMatches]);
 
-  const championTeamId = finalMatch?.winnerId ?? null;
-  const championName = championTeamId ? teamDisplay(championTeamId) : "";
+  const championNames = useMemo(() => {
+    return finalMatches
+      .filter((m) => !!m.winnerId)
+      .map((m) => teamDisplay(m.winnerId));
+  }, [finalMatches, teamDisplay]);
+
+  const championName = championNames.join(", ");
 
   const tournamentInProgress = useMemo(() => {
     const count = rrMatches.length + semis.length + finals.length;
@@ -1273,15 +1281,8 @@ export default function MatchSchedule() {
     }
   }
 
-  const finalsOnly = useMemo(() => {
-    const m = finals.find((x) => x.phase === "FINAL" || x.id === "FINAL");
-    return m ? [m] : [];
-  }, [finals]);
-
-  const thirdOnly = useMemo(() => {
-    const m = finals.find((x) => x.phase === "THIRD" || x.id === "THIRD");
-    return m ? [m] : [];
-  }, [finals]);
+  const finalsOnly = finalMatches;
+  const thirdOnly = thirdMatches;
 
   return (
     <Box bg="cream.50" minH="calc(100vh - 64px)" pb={{ base: 10, md: 12 }}>
@@ -1476,7 +1477,6 @@ export default function MatchSchedule() {
               </Text>
             </Box>
           ) : null}
-
           {advanceSemisError ? (
             <Box
               border="1px solid"
@@ -1490,7 +1490,6 @@ export default function MatchSchedule() {
               </Text>
             </Box>
           ) : null}
-
           {advanceFinalsError ? (
             <Box
               border="1px solid"
@@ -1504,7 +1503,6 @@ export default function MatchSchedule() {
               </Text>
             </Box>
           ) : null}
-
           {resetPlayoffsError ? (
             <Box
               border="1px solid"
@@ -1518,7 +1516,6 @@ export default function MatchSchedule() {
               </Text>
             </Box>
           ) : null}
-
           {resetError ? (
             <Box
               border="1px solid"
@@ -1532,7 +1529,6 @@ export default function MatchSchedule() {
               </Text>
             </Box>
           ) : null}
-
           {tid && status === "ok" ? (
             <Card.Root>
               <Card.Body>
@@ -1591,7 +1587,6 @@ export default function MatchSchedule() {
               </Card.Body>
             </Card.Root>
           ) : null}
-
           {tid && status === "ok" ? (
             <Card.Root>
               <Card.Body>
@@ -1710,7 +1705,6 @@ export default function MatchSchedule() {
               </Card.Body>
             </Card.Root>
           ) : null}
-
           <Card.Root>
             <Card.Body>
               <Flex
@@ -1765,7 +1759,6 @@ export default function MatchSchedule() {
               </Flex>
             </Card.Body>
           </Card.Root>
-
           <Card.Root>
             <Card.Body>
               {!tid ? (
@@ -2061,8 +2054,9 @@ export default function MatchSchedule() {
                 </Heading>
 
                 <Stack gap={3}>
-                  {finalMatch ? (
+                  {finalMatches.map((match) => (
                     <Box
+                      key={match.id}
                       border="1px solid"
                       borderColor="border"
                       borderRadius="xl"
@@ -2072,21 +2066,22 @@ export default function MatchSchedule() {
                       <HStack justify="space-between" wrap="wrap">
                         <Badge variant="pickle">Final</Badge>
                         <Text fontSize="sm" opacity={0.7}>
-                          {finalMatch.id}
+                          {match.id}
                         </Text>
                       </HStack>
                       <Text mt={2} fontWeight="700">
-                        {teamDisplay(finalMatch.teamAId)} vs{" "}
-                        {teamDisplay(finalMatch.teamBId)}
+                        {teamDisplay(match.teamAId)} vs{" "}
+                        {teamDisplay(match.teamBId)}
                       </Text>
                       <Text mt={1} opacity={0.85}>
-                        Winner: <b>{winnerText(finalMatch)}</b>
+                        Winner: <b>{winnerText(match)}</b>
                       </Text>
                     </Box>
-                  ) : null}
+                  ))}
 
-                  {thirdMatch ? (
+                  {thirdMatches.map((match) => (
                     <Box
+                      key={match.id}
                       border="1px solid"
                       borderColor="border"
                       borderRadius="xl"
@@ -2096,18 +2091,18 @@ export default function MatchSchedule() {
                       <HStack justify="space-between" wrap="wrap">
                         <Badge variant="club">Third Place</Badge>
                         <Text fontSize="sm" opacity={0.7}>
-                          {thirdMatch.id}
+                          {match.id}
                         </Text>
                       </HStack>
                       <Text mt={2} fontWeight="700">
-                        {teamDisplay(thirdMatch.teamAId)} vs{" "}
-                        {teamDisplay(thirdMatch.teamBId)}
+                        {teamDisplay(match.teamAId)} vs{" "}
+                        {teamDisplay(match.teamBId)}
                       </Text>
                       <Text mt={1} opacity={0.85}>
-                        Winner: <b>{winnerText(thirdMatch)}</b>
+                        Winner: <b>{winnerText(match)}</b>
                       </Text>
                     </Box>
-                  ) : null}
+                  ))}
                 </Stack>
               </Card.Body>
             </Card.Root>

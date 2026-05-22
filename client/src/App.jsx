@@ -119,6 +119,7 @@ export default function App({ user, setUser }) {
   useEffect(() => {
     fetch(`${API_BASE}/api/message`).catch(() => {});
   }, []);
+
   /* -----------------------------
      Tournament selection (global)
   ------------------------------ */
@@ -130,6 +131,12 @@ export default function App({ user, setUser }) {
   const [selectedTid, setSelectedTid] = useState(
     getCurrentTournamentId() || ""
   );
+
+  const [selectedTournamentInfo, setSelectedTournamentInfo] = useState(null);
+  const [selectedTournamentInfoStatus, setSelectedTournamentInfoStatus] =
+    useState("idle");
+  const [selectedTournamentInfoError, setSelectedTournamentInfoError] =
+    useState("");
 
   async function loadTournaments() {
     setTournamentsError("");
@@ -146,9 +153,45 @@ export default function App({ user, setUser }) {
     }
   }
 
+  async function loadSelectedTournamentInfo(tid) {
+    if (!tid) {
+      setSelectedTournamentInfo(null);
+      setSelectedTournamentInfoStatus("idle");
+      setSelectedTournamentInfoError("");
+      return;
+    }
+
+    setSelectedTournamentInfo(null);
+    setSelectedTournamentInfoError("");
+    setSelectedTournamentInfoStatus("loading");
+
+    try {
+      const res = await fetch(
+        apiUrl(`/api/tournaments/${tid}/public-info`)
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Could not load tournament info.");
+      }
+
+      setSelectedTournamentInfo(data);
+      setSelectedTournamentInfoStatus("ok");
+    } catch (err) {
+      setSelectedTournamentInfoStatus("error");
+      setSelectedTournamentInfoError(
+        err?.message || "Could not load tournament info."
+      );
+    }
+  }
+
   useEffect(() => {
-  if (tournamentsStatus === "idle") loadTournaments();
-}, [tournamentsStatus]);
+    if (tournamentsStatus === "idle") loadTournaments();
+  }, [tournamentsStatus]);
+
+  useEffect(() => {
+    loadSelectedTournamentInfo(selectedTid);
+  }, [selectedTid]);
 
   const tournamentCollection = useMemo(
     () =>
@@ -165,9 +208,12 @@ export default function App({ user, setUser }) {
     const next = String(id || "");
     setSelectedTid(next);
     if (next) setCurrentTournamentId(next);
+    setJoinOpen(false);
+    setJoinError("");
   }
 
   const hasTournamentSelected = !!selectedTid;
+  const registrationLocked = !!selectedTournamentInfo?.registrationLocked;
 
   /* -----------------------------
      Join Tournament state
@@ -189,12 +235,21 @@ export default function App({ user, setUser }) {
     joinName.trim() &&
     joinEmail.includes("@") &&
     selectedTid &&
+    !registrationLocked &&
     !isSubmitting &&
     (!needsSelfRating || !!joinSelfRating);
 
   async function submitJoin(e) {
     e.preventDefault();
     setJoinError("");
+
+    if (registrationLocked) {
+      setJoinError(
+        "Registration for this tournament is now closed. Please contact the tournament organizer with questions."
+      );
+      return;
+    }
+
     setJoinStatus("saving");
 
     const trimmedDupr = joinDupr.trim();
@@ -227,7 +282,7 @@ export default function App({ user, setUser }) {
       );
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error);
+      if (!res.ok) throw new Error(data?.error || "Signup failed.");
 
       setOptimisticPlayer({
         id: "optimistic",
@@ -267,7 +322,9 @@ export default function App({ user, setUser }) {
 
   const selectedTournamentLabel =
     tournamentCollection.items.find((i) => i.value === String(selectedTid))
-      ?.label || "";
+      ?.label ||
+    selectedTournamentInfo?.name ||
+    "";
 
   return (
     <Box minH="100vh" py={{ base: 6, md: 14 }} bg="cream.50">
@@ -367,6 +424,12 @@ export default function App({ user, setUser }) {
                       </Text>
                     ) : null}
 
+                    {selectedTournamentInfoStatus === "error" ? (
+                      <Text color="red.600" fontSize="sm">
+                        {selectedTournamentInfoError}
+                      </Text>
+                    ) : null}
+
                     <Box w="full">
                       <Select.Root
                         collection={tournamentCollection}
@@ -406,19 +469,46 @@ export default function App({ user, setUser }) {
                         Brackets.
                       </Text>
                     )}
+
+                    {registrationLocked ? (
+                      <Surface
+                        p={3}
+                        bg="orange.50"
+                        borderColor="orange.200"
+                        boxShadow="none"
+                      >
+                        <Text fontWeight="800" color="orange.800">
+                          Registration Closed
+                        </Text>
+                        <Text fontSize="sm" color="orange.800">
+                          Registration for this tournament is now closed. Please
+                          contact the tournament organizer with questions.
+                        </Text>
+                      </Surface>
+                    ) : null}
                   </Stack>
                 </Surface>
 
                 <Stack direction="column" gap={3} align="stretch">
                   <Button
                     w="full"
-                    bg="club.900"
+                    bg={registrationLocked ? "gray.500" : "club.900"}
                     color="white"
-                    _hover={{ bg: "club.800" }}
-                    onClick={() => setJoinOpen((v) => !v)}
+                    _hover={{
+                      bg: registrationLocked ? "gray.500" : "club.800",
+                    }}
+                    onClick={() => {
+                      if (registrationLocked) return;
+                      setJoinOpen((v) => !v);
+                    }}
+                    disabled={!selectedTid || registrationLocked}
                   >
                     <LogIn size={18} style={{ marginRight: 8 }} />
-                    {joinOpen ? "Close Join" : "Join Tournament"}
+                    {registrationLocked
+                      ? "Registration Closed"
+                      : joinOpen
+                      ? "Close Join"
+                      : "Join Tournament"}
                   </Button>
 
                   <Button
@@ -451,7 +541,7 @@ export default function App({ user, setUser }) {
                   </Button>
                 </Stack>
 
-                {joinOpen && (
+                {joinOpen && !registrationLocked && (
                   <Card.Root width="100%">
                     <Card.Body>
                       <Stack as="form" onSubmit={submitJoin} gap={4}>

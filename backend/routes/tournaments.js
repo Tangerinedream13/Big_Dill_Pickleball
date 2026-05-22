@@ -126,7 +126,8 @@ router.get("/:id/info", async (req, res) => {
         is_public as "isPublic",
         show_player_names_public as "showPlayerNamesPublic",
         show_dupr_public as "showDuprPublic",
-        use_aliases_public as "useAliasesPublic"
+        use_aliases_public as "useAliasesPublic",
+        registration_locked as "registrationLocked"
       from tournaments
       where id = $1
       limit 1;
@@ -167,7 +168,8 @@ router.get("/:id/public-info", async (req, res) => {
         parking_info as "parkingInfo",
         check_in_info as "checkInInfo",
         contact_email as "contactEmail",
-        is_public as "isPublic"
+        is_public as "isPublic",
+        registration_locked as "registrationLocked"
       from tournaments
       where id = $1
       limit 1;
@@ -213,6 +215,7 @@ router.patch("/:id/info", async (req, res) => {
       showPlayerNamesPublic,
       showDuprPublic,
       useAliasesPublic,
+      registrationLocked,
     } = req.body ?? {};
 
     const updated = await pool.query(
@@ -232,8 +235,9 @@ router.patch("/:id/info", async (req, res) => {
         is_public = coalesce($11, is_public),
         show_player_names_public = coalesce($12, show_player_names_public),
         show_dupr_public = coalesce($13, show_dupr_public),
-        use_aliases_public = coalesce($14, use_aliases_public)
-      where id = $15
+        use_aliases_public = coalesce($14, use_aliases_public),
+        registration_locked = coalesce($15, registration_locked)
+      where id = $16
       returning
         id,
         name,
@@ -249,7 +253,8 @@ router.patch("/:id/info", async (req, res) => {
         is_public as "isPublic",
         show_player_names_public as "showPlayerNamesPublic",
         show_dupr_public as "showDuprPublic",
-        use_aliases_public as "useAliasesPublic";
+        use_aliases_public as "useAliasesPublic",
+        registration_locked as "registrationLocked";
       `,
       [
         name ?? null,
@@ -266,6 +271,7 @@ router.patch("/:id/info", async (req, res) => {
         showPlayerNamesPublic ?? null,
         showDuprPublic ?? null,
         useAliasesPublic ?? null,
+        registrationLocked ?? null,
         tournamentId,
       ]
     );
@@ -296,6 +302,7 @@ router.delete("/:id", async (req, res) => {
       `select id from tournaments where id = $1;`,
       [tournamentId]
     );
+
     if (exists.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.json({
@@ -325,6 +332,7 @@ router.delete("/:id", async (req, res) => {
         `delete from team_players where team_id = any($1::int[]);`,
         [teamIds]
       );
+
       await client.query(`delete from teams where id = any($1::int[]);`, [
         teamIds,
       ]);
@@ -467,31 +475,32 @@ router.get("/:id/public-matches", async (req, res) => {
 // GET /api/tournaments/:id/teams
 router.get("/:id/teams", async (req, res) => {
   const tournamentId = parseId(req.params.id);
-  if (!tournamentId)
+  if (!tournamentId) {
     return res.status(400).json({ error: "Invalid tournament id." });
+  }
 
   try {
     const r = await pool.query(
       `
       select
-      t.id as id,
-      t.name as name,
-      coalesce(tt.division, t.division, 'BEGINNER_INTERMEDIATE') as division,
-      coalesce(
-        json_agg(
-          json_build_object(
-            'id', p.id,
-            'name', p.name,
-            'email', p.email,
-            'duprRating', p.dupr_rating,
-            'selfRating', p.self_rating,
-            'skillSource', p.skill_source,
-            'publicAlias', p.public_alias
-          )
-          order by p.id
-        ) filter (where p.id is not null),
-        '[]'::json
-      ) as players
+        t.id as id,
+        t.name as name,
+        coalesce(tt.division, t.division, 'BEGINNER_INTERMEDIATE') as division,
+        coalesce(
+          json_agg(
+            json_build_object(
+              'id', p.id,
+              'name', p.name,
+              'email', p.email,
+              'duprRating', p.dupr_rating,
+              'selfRating', p.self_rating,
+              'skillSource', p.skill_source,
+              'publicAlias', p.public_alias
+            )
+            order by p.id
+          ) filter (where p.id is not null),
+          '[]'::json
+        ) as players
       from tournament_teams tt
       join teams t on t.id = tt.team_id
       left join team_players tp on tp.team_id = t.id
@@ -517,14 +526,19 @@ router.post("/:id/teams", async (req, res) => {
   const playerBId = parseId(req.body?.playerBId);
   const requestedName = (req.body?.teamName ?? "").toString().trim();
 
-  if (!tournamentId)
+  if (!tournamentId) {
     return res.status(400).json({ error: "Invalid tournament id." });
-  if (!playerAId || !playerBId)
+  }
+
+  if (!playerAId || !playerBId) {
     return res
       .status(400)
       .json({ error: "playerAId and playerBId are required." });
-  if (playerAId === playerBId)
+  }
+
+  if (playerAId === playerBId) {
     return res.status(400).json({ error: "Pick two different players." });
+  }
 
   const client = await pool.connect();
   try {
@@ -565,9 +579,14 @@ router.post("/:id/teams", async (req, res) => {
     let finalName = requestedName;
     if (!finalName) {
       const n = await client.query(
-        `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
+        `
+        select count(*)::int as c
+        from tournament_teams
+        where tournament_id = $1;
+        `,
         [tournamentId]
       );
+
       finalName = `T-${tournamentId}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
     }
 
@@ -604,7 +623,10 @@ router.post("/:id/teams", async (req, res) => {
     const teamId = teamRow.rows[0].id;
 
     await client.query(
-      `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
+      `
+      insert into team_players(team_id, player_id)
+      values ($1, $2), ($1, $3);
+      `,
       [teamId, playerAId, playerBId]
     );
 
@@ -636,9 +658,14 @@ router.post("/:id/teams", async (req, res) => {
 router.delete("/:id/teams/:teamId", async (req, res) => {
   const tournamentId = parseId(req.params.id);
   const teamId = parseId(req.params.teamId);
-  if (!tournamentId)
+
+  if (!tournamentId) {
     return res.status(400).json({ error: "Invalid tournament id." });
-  if (!teamId) return res.status(400).json({ error: "Invalid team id." });
+  }
+
+  if (!teamId) {
+    return res.status(400).json({ error: "Invalid team id." });
+  }
 
   const client = await pool.connect();
   try {

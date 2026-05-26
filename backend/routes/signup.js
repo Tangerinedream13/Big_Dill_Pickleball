@@ -101,6 +101,31 @@ module.exports = (pool) => {
     try {
       await client.query("BEGIN");
 
+      // This blocks public registration only.
+      // Admin add/remove routes below are intentionally left unlocked.
+      const tournamentCheck = await client.query(
+        `
+        select id, name, registration_locked as "registrationLocked"
+        from tournaments
+        where id = $1
+        limit 1;
+        `,
+        [tid]
+      );
+
+      if (tournamentCheck.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Tournament not found." });
+      }
+
+      if (tournamentCheck.rows[0].registrationLocked) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          error:
+            "Registration for Paddle with a Purpose is now closed. Please contact the tournament organizer with questions.",
+        });
+      }
+
       const found = await client.query(
         `
         select
@@ -212,6 +237,7 @@ module.exports = (pool) => {
         .status(400)
         .json({ error: "Valid email is required (or leave blank)." });
     }
+
     const duprError = validateDuprRange(dupr);
     if (duprError) {
       return res.status(400).json({ error: duprError });
@@ -340,6 +366,7 @@ module.exports = (pool) => {
     if (!Number.isInteger(tid) || tid <= 0) {
       return res.status(400).json({ error: "Invalid tournament id." });
     }
+
     if (!Number.isInteger(pid) || pid <= 0) {
       return res.status(400).json({ error: "Invalid player id." });
     }

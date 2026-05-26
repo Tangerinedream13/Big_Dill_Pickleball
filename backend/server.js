@@ -61,7 +61,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions)); 
+app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
 app.set("trust proxy", 1);
@@ -130,6 +130,41 @@ function duprLabel(dupr) {
   if (n >= 3.0) return "Intermediate (3.0–3.99)";
   if (n >= 2.0) return "Beginner (2.0–2.99)";
   return "New (under 2.0)";
+}
+
+function divisionFromRating({ duprRating, selfRating }) {
+  const dupr = parseDupr(duprRating);
+
+  if (dupr != null) {
+    return dupr >= 4.0 ? "ADVANCED" : "BEGINNER_INTERMEDIATE";
+  }
+
+  const self = String(selfRating || "").toLowerCase();
+
+  if (self.includes("advanced")) return "ADVANCED";
+
+  return "BEGINNER_INTERMEDIATE";
+}
+
+function divisionLabel(division) {
+  if (division === "ADVANCED") return "Advanced";
+  if (division === "BEGINNER_INTERMEDIATE") {
+    return "Beginner / Intermediate";
+  }
+  return "Beginner / Intermediate";
+}
+
+function teamDivisionFromPlayers(players) {
+  const hasAdvanced = players.some((p) => {
+    return (
+      divisionFromRating({
+        duprRating: p.duprRating ?? p.dupr_rating,
+        selfRating: p.selfRating ?? p.self_rating,
+      }) === "ADVANCED"
+    );
+  });
+
+  return hasAdvanced ? "ADVANCED" : "BEGINNER_INTERMEDIATE";
 }
 
 function validatePickleballScore(
@@ -213,26 +248,56 @@ async function resolveTournamentId(req) {
   return fromQuery || fromBody || (await getDefaultTournamentId());
 }
 
-async function getTeamsForTournament(tournamentId) {
+async function getTeamsForTournament(tournamentId, division = null) {
+  const params = [tournamentId];
+
+  let divisionFilter = "";
+  if (division) {
+    params.push(division);
+    divisionFilter = `
+      and coalesce(tt.division, teams.division, 'BEGINNER_INTERMEDIATE') = $2
+    `;
+  }
+
   const r = await pool.query(
     `
-    select teams.id, teams.name
+    select
+      teams.id,
+      teams.name,
+      coalesce(tt.division, teams.division, 'BEGINNER_INTERMEDIATE') as division
     from tournament_teams tt
     join teams on teams.id = tt.team_id
     where tt.tournament_id = $1
+      ${divisionFilter}
     order by coalesce(tt.seed, 999999), teams.id;
     `,
-    [tournamentId]
+    params
   );
+
   return r.rows;
 }
 
-async function getMatchesForTournamentByPhase(tournamentId, phases) {
+async function getMatchesForTournamentByPhase(
+  tournamentId,
+  phases,
+  division = null
+) {
+  const params = [tournamentId, phases];
+
+  let divisionFilter = "";
+  if (division) {
+    params.push(division);
+    divisionFilter = `
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $3
+    `;
+  }
+
   const r = await pool.query(
     `
     select
       code,
       phase,
+      coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
       team_a_id as "teamAId",
       team_b_id as "teamBId",
       score_a as "scoreA",
@@ -244,22 +309,25 @@ async function getMatchesForTournamentByPhase(tournamentId, phases) {
     from matches
     where tournament_id = $1
       and phase = any($2::text[])
+      ${divisionFilter}
     order by
+      coalesce(division, 'BEGINNER_INTERMEDIATE'),
       case
-        when code like 'RR-%' then 1
-        when code like 'SF%' then 2
-        when code = 'FINAL' then 3
-        when code = 'THIRD' then 4
+        when code like '%RR-%' or code like 'RR-%' then 1
+        when code like '%SF%' or code like 'SF%' then 2
+        when code like '%FINAL' or code = 'FINAL' then 3
+        when code like '%THIRD' or code = 'THIRD' then 4
         else 9
       end,
       code;
     `,
-    [tournamentId, phases]
+    params
   );
 
   return r.rows.map((m) => ({
     id: m.code,
     phase: m.phase,
+    division: m.division,
     teamAId: m.teamAId,
     teamBId: m.teamBId,
     scoreA: m.scoreA,
@@ -311,63 +379,53 @@ function decoratePlacementsWithTeamNames(placements, teams) {
   };
 }
 
-/* -----------------------------
-   Playoffs
------------------------------- */
+const DIVISIONS = ["BEGINNER_INTERMEDIATE", "ADVANCED"];
 
-// Reset playoffs only (SF / FINAL / THIRD).
-app.post("/api/playoffs/reset", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    const result = await pool.query(
-      `
-      delete from matches
-      where tournament_id = $1
-        and phase in ('SF', 'FINAL', 'THIRD');
-      `,
-      [tournamentId]
-    );
-
-    const deleted = result.rowCount || 0;
-
-    if (deleted === 0) {
-      return res.json({
-        ok: true,
-        tournamentId,
-        deleted: 0,
-        message: "No playoffs to reset.",
-      });
-    }
-
-    return res.json({ ok: true, tournamentId, deleted });
-  } catch (err) {
-    console.error("Playoffs reset error:", err);
-    res.status(500).json({ error: errToMessage(err) });
-  }
-});
+function divisionPrefix(division) {
+  return division === "ADVANCED" ? "ADV" : "BI";
+}
 
 function computeQueue(matches) {
-  const busyTeams = new Set();
+  const allMatches = Array.isArray(matches) ? matches : [];
 
-  for (const m of matches) {
-    if (m.status === "on_court") {
-      busyTeams.add(String(m.teamAId));
-      busyTeams.add(String(m.teamBId));
-    }
+  const onCourt = allMatches.filter((m) => m.status === "on_court");
+
+  // Teams currently playing or already queued should not appear again.
+  const unavailableTeams = new Set();
+
+  for (const m of onCourt) {
+    if (m.teamAId != null) unavailableTeams.add(String(m.teamAId));
+    if (m.teamBId != null) unavailableTeams.add(String(m.teamBId));
   }
 
-  const playable = matches.filter((m) => {
-    if (m.status !== "pending") return false;
-    if (busyTeams.has(String(m.teamAId))) return false;
-    if (busyTeams.has(String(m.teamBId))) return false;
-    return true;
-  });
+  const playableQueue = [];
+
+  for (const m of allMatches) {
+    const status = m.status || (m.winnerId ? "completed" : "pending");
+
+    if (status !== "pending") continue;
+    if (m.teamAId == null || m.teamBId == null) continue;
+
+    const teamA = String(m.teamAId);
+    const teamB = String(m.teamBId);
+
+    // Skip if either team is currently playing OR already reserved in the queue.
+    if (unavailableTeams.has(teamA) || unavailableTeams.has(teamB)) continue;
+
+    playableQueue.push({
+      ...m,
+      status,
+    });
+
+    // Reserve these teams so they do not appear again in Up Soon.
+    unavailableTeams.add(teamA);
+    unavailableTeams.add(teamB);
+  }
 
   // Interleave matches across divisions so both appear in the queue.
   // If no division field exists, all matches go into one bucket and order is preserved.
   const buckets = new Map();
-  for (const m of playable) {
+  for (const m of playableQueue) {
     const key = m.division ?? "DEFAULT";
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(m);
@@ -376,29 +434,61 @@ function computeQueue(matches) {
   const divQueues = [...buckets.values()];
   const interleaved = [];
   let i = 0;
-  while (interleaved.length < playable.length) {
+  while (interleaved.length < playableQueue.length) {
     const bucket = divQueues[i % divQueues.length];
     if (bucket.length > 0) interleaved.push(bucket.shift());
     i++;
   }
 
   return {
-    currentlyOnCourt: matches.filter((m) => m.status === "on_court"),
+    currentlyOnCourt: onCourt,
     nextOnDeck: interleaved[0] ?? null,
     upSoon: interleaved.slice(1, 5),
   };
 }
 
-async function finalsAreScored(tournamentId) {
+function spreadOutMatches(matches) {
+  const remaining = Array.isArray(matches) ? [...matches] : [];
+  const ordered = [];
+  const recentlyPlayed = [];
+
+  while (remaining.length > 0) {
+    let index = remaining.findIndex((m) => {
+      const teamA = String(m.teamAId);
+      const teamB = String(m.teamBId);
+
+      return !recentlyPlayed.includes(teamA) && !recentlyPlayed.includes(teamB);
+    });
+
+    if (index === -1) index = 0;
+
+    const [next] = remaining.splice(index, 1);
+    ordered.push(next);
+
+    recentlyPlayed.push(String(next.teamAId), String(next.teamBId));
+
+    while (recentlyPlayed.length > 4) {
+      recentlyPlayed.shift();
+    }
+  }
+
+  return ordered.map((m, idx) => ({
+    ...m,
+    id: `RR-${idx + 1}`,
+  }));
+}
+
+async function finalsAreScored(tournamentId, division) {
   const r = await pool.query(
     `
     select code, score_a, score_b, winner_id
     from matches
     where tournament_id = $1
       and phase in ('FINAL','THIRD')
-    limit 1;
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2
+    limit 2;
     `,
-    [tournamentId]
+    [tournamentId, division]
   );
 
   if (r.rowCount === 0) return false;
@@ -457,10 +547,16 @@ async function setScore({
   );
 }
 
-async function ensureFinalsFromSemis(tournamentId) {
-  const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
-  const sf1 = semis.find((m) => String(m.id) === "SF1");
-  const sf2 = semis.find((m) => String(m.id) === "SF2");
+async function ensureFinalsFromSemis(tournamentId, division) {
+  const semis = await getMatchesForTournamentByPhase(
+    tournamentId,
+    ["SF"],
+    division
+  );
+
+  const prefix = divisionPrefix(division);
+  const sf1 = semis.find((m) => String(m.id) === `${prefix}-SF1`);
+  const sf2 = semis.find((m) => String(m.id) === `${prefix}-SF2`);
 
   if (!sf1?.winnerId || !sf2?.winnerId) return;
 
@@ -475,21 +571,38 @@ async function ensureFinalsFromSemis(tournamentId) {
   await pool.query(
     `
     delete from matches
-    where tournament_id = $1 and phase in ('FINAL','THIRD');
+    where tournament_id = $1
+      and phase in ('FINAL','THIRD')
+      and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
     `,
-    [tournamentId]
+    [tournamentId, division]
   );
 
   await pool.query(
     `
     insert into matches (
-      tournament_id, code, phase, team_a_id, team_b_id, status
+      tournament_id,
+      code,
+      phase,
+      division,
+      team_a_id,
+      team_b_id,
+      status
     )
     values
-      ($1, 'FINAL', 'FINAL', $2, $3, 'pending'),
-      ($1, 'THIRD', 'THIRD', $4, $5, 'pending');
+      ($1, $2, 'FINAL', $3, $4, $5, 'pending'),
+      ($1, $6, 'THIRD', $3, $7, $8, 'pending');
     `,
-    [tournamentId, sf1.winnerId, sf2.winnerId, sf1Loser, sf2Loser]
+    [
+      tournamentId,
+      `${prefix}-FINAL`,
+      division,
+      sf1.winnerId,
+      sf2.winnerId,
+      `${prefix}-THIRD`,
+      sf1Loser,
+      sf2Loser,
+    ]
   );
 }
 
@@ -571,40 +684,17 @@ app.post("/api/playoffs/generate", async (req, res) => {
       `,
       [tournamentId]
     );
+
     if (existingSemis.rowCount > 0) {
       return res.status(409).json({
         error: "Semifinals already exist. Reset playoffs to regenerate.",
       });
     }
 
-    const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
-      "RR",
-    ]);
-
-    const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
-    if (rrIncomplete.length > 0) {
-      return res.status(409).json({
-        error: `Round robin isn't complete yet. Missing winners for: ${rrIncomplete
-          .map((m) => m.id)
-          .join(", ")}`,
-      });
-    }
-
-    const standings = engine.computeStandings(
-      teams.map((t) => t.id),
-      rrMatches
-    );
-
-    if (!Array.isArray(standings) || standings.length < 4) {
-      return res.status(409).json({
-        error:
-          "Need at least 4 teams (with completed RR) to generate semifinals.",
-      });
-    }
-
-    const top4 = standings.slice(0, 4).map((s) => String(s.teamId));
-    const [seed1, seed2, seed3, seed4] = top4;
+    const allTeams = await getTeamsForTournament(tournamentId);
+    const generated = [];
+    const standingsByDivision = {};
+    const skippedDivisions = [];
 
     await pool.query(
       `
@@ -615,18 +705,97 @@ app.post("/api/playoffs/generate", async (req, res) => {
       [tournamentId]
     );
 
-    await pool.query(
-      `
-      insert into matches (
-        tournament_id, code, phase, team_a_id, team_b_id, status
-      )
-      values
-        ($1, 'SF1', 'SF', $2, $3, 'pending'),
-        ($1, 'SF2', 'SF', $4, $5, 'pending');
-      `,
-      [tournamentId, seed1, seed4, seed2, seed3]
-    );
+    for (const division of DIVISIONS) {
+      const divisionTeams = await getTeamsForTournament(tournamentId, division);
+      const rrMatches = await getMatchesForTournamentByPhase(
+        tournamentId,
+        ["RR"],
+        division
+      );
 
+      if (divisionTeams.length < 4) {
+        skippedDivisions.push({
+          division,
+          reason: "Need at least 4 teams to generate semifinals.",
+        });
+        continue;
+      }
+
+      const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
+      if (rrIncomplete.length > 0) {
+        return res.status(409).json({
+          error: `${divisionLabel(
+            division
+          )} round robin isn't complete yet. Missing winners for: ${rrIncomplete
+            .map((m) => m.id)
+            .join(", ")}`,
+        });
+      }
+
+      const standings = engine.computeStandings(
+        divisionTeams.map((t) => t.id),
+        rrMatches
+      );
+
+      standingsByDivision[division] = standings;
+
+      if (!Array.isArray(standings) || standings.length < 4) {
+        skippedDivisions.push({
+          division,
+          reason: "Need at least 4 teams with completed standings.",
+        });
+        continue;
+      }
+
+      const top4 = standings.slice(0, 4).map((s) => String(s.teamId));
+      const [seed1, seed2, seed3, seed4] = top4;
+      const prefix = divisionPrefix(division);
+
+      await pool.query(
+        `
+        insert into matches (
+          tournament_id,
+          code,
+          phase,
+          division,
+          team_a_id,
+          team_b_id,
+          status
+        )
+        values
+          ($1, $2, 'SF', $3, $4, $5, 'pending'),
+          ($1, $6, 'SF', $3, $7, $8, 'pending');
+        `,
+        [
+          tournamentId,
+          `${prefix}-SF1`,
+          division,
+          seed1,
+          seed4,
+          `${prefix}-SF2`,
+          seed2,
+          seed3,
+        ]
+      );
+
+      generated.push({
+        division,
+        label: divisionLabel(division),
+        semis: [`${prefix}-SF1`, `${prefix}-SF2`],
+      });
+    }
+
+    if (generated.length === 0) {
+      return res.status(409).json({
+        error:
+          "No divisions had enough completed teams to generate semifinals.",
+        skippedDivisions,
+      });
+    }
+
+    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
+      "RR",
+    ]);
     const semis = await getMatchesForTournamentByPhase(tournamentId, ["SF"]);
     const finals = await getMatchesForTournamentByPhase(tournamentId, [
       "FINAL",
@@ -636,11 +805,13 @@ app.post("/api/playoffs/generate", async (req, res) => {
     return res.json({
       ok: true,
       tournamentId,
-      teams,
+      teams: allTeams,
       rrMatches,
-      standings,
+      standingsByDivision,
       semis,
       finals,
+      generated,
+      skippedDivisions,
       placements: null,
       queue: computeQueue([...rrMatches, ...semis, ...finals]),
     });
@@ -653,33 +824,41 @@ app.post("/api/playoffs/generate", async (req, res) => {
 /* -----------------------------
   Playoffs: Score Semis
 ------------------------------ */
+
 app.post("/api/playoffs/semis/:id/score", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
     const id = String(req.params.id || "").toUpperCase();
 
-    if (id !== "SF1" && id !== "SF2") {
-      return res
-        .status(400)
-        .json({ error: "Invalid semifinal id. Use SF1 or SF2." });
+    const validSemiCodes = ["BI-SF1", "BI-SF2", "ADV-SF1", "ADV-SF2"];
+    if (!validSemiCodes.includes(id)) {
+      return res.status(400).json({
+        error: "Invalid semifinal id. Use BI-SF1, BI-SF2, ADV-SF1, or ADV-SF2.",
+      });
     }
 
     const mRes = await pool.query(
       `
-      select team_a_id as "teamAId", team_b_id as "teamBId"
+      select
+        coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
+        team_a_id as "teamAId",
+        team_b_id as "teamBId"
       from matches
       where tournament_id = $1 and phase = 'SF' and code = $2
       `,
       [tournamentId, id]
     );
+
     if (mRes.rowCount === 0) {
       return res.status(404).json({ error: `Semifinal not found: ${id}` });
     }
+
     const m = mRes.rows[0];
 
-    if (await finalsAreScored(tournamentId)) {
+    if (await finalsAreScored(tournamentId, m.division)) {
       return res.status(409).json({
-        error: "Finals already scored. Reset playoffs before changing semis.",
+        error:
+          "Finals already scored for this division. Reset playoffs before changing semis.",
       });
     }
 
@@ -692,9 +871,11 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       await pool.query(
         `
         delete from matches
-        where tournament_id = $1 and phase in ('FINAL','THIRD');
+        where tournament_id = $1
+          and phase in ('FINAL','THIRD')
+          and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
         `,
-        [tournamentId]
+        [tournamentId, m.division]
       );
 
       return sendState(tournamentId, res);
@@ -709,8 +890,10 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
       }
+
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
+
       if (w !== a && w !== b) {
         return res
           .status(400)
@@ -718,7 +901,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       }
 
       await setWinnerOnly({ tournamentId, phase: "SF", code: id, winnerId: w });
-      await ensureFinalsFromSemis(tournamentId);
+      await ensureFinalsFromSemis(tournamentId, m.division);
 
       return sendState(tournamentId, res);
     }
@@ -742,7 +925,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       winnerId,
     });
 
-    await ensureFinalsFromSemis(tournamentId);
+    await ensureFinalsFromSemis(tournamentId, m.division);
 
     return sendState(tournamentId, res);
   } catch (err) {
@@ -750,7 +933,6 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
     res.status(500).json({ error: errToMessage(err) });
   }
 });
-
 /* -----------------------------
   Playoffs: Score Finals + Third
 ------------------------------ */
@@ -759,19 +941,29 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
     const id = String(req.params.id || "").toUpperCase();
 
-    if (id !== "FINAL" && id !== "THIRD") {
-      return res
-        .status(400)
-        .json({ error: "Invalid finals id. Use FINAL or THIRD." });
+    const validFinalCodes = ["BI-FINAL", "BI-THIRD", "ADV-FINAL", "ADV-THIRD"];
+
+    if (!validFinalCodes.includes(id)) {
+      return res.status(400).json({
+        error:
+          "Invalid finals id. Use BI-FINAL, BI-THIRD, ADV-FINAL, or ADV-THIRD.",
+      });
     }
+
+    const phase = id.endsWith("FINAL") ? "FINAL" : "THIRD";
 
     const mRes = await pool.query(
       `
-      select team_a_id as "teamAId", team_b_id as "teamBId"
+      select
+        coalesce(division, 'BEGINNER_INTERMEDIATE') as division,
+        team_a_id as "teamAId",
+        team_b_id as "teamBId"
       from matches
-      where tournament_id = $1 and code = $2 and phase = $3
+      where tournament_id = $1
+        and code = $2
+        and phase = $3
       `,
-      [tournamentId, id, id]
+      [tournamentId, id, phase]
     );
 
     if (mRes.rowCount === 0) {
@@ -784,7 +976,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
     const winnerIdRaw = req.body?.winnerId;
 
     if (clear) {
-      await clearMatch({ tournamentId, phase: id, code: id });
+      await clearMatch({ tournamentId, phase, code: id });
       return sendState(tournamentId, res);
     }
 
@@ -794,18 +986,27 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       winnerIdRaw !== ""
     ) {
       const w = Number(winnerIdRaw);
+
       if (!Number.isInteger(w)) {
         return res.status(400).json({ error: "winnerId must be an integer." });
       }
+
       const a = Number(m.teamAId);
       const b = Number(m.teamBId);
+
       if (w !== a && w !== b) {
         return res
           .status(400)
           .json({ error: "winnerId must be Team A or Team B for this match." });
       }
 
-      await setWinnerOnly({ tournamentId, phase: id, code: id, winnerId: w });
+      await setWinnerOnly({
+        tournamentId,
+        phase,
+        code: id,
+        winnerId: w,
+      });
+
       return sendState(tournamentId, res);
     }
 
@@ -815,13 +1016,14 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
       playTo: 15,
       winBy: 2,
     });
+
     if (msg) return res.status(400).json({ error: msg });
 
     const winnerId = Number(scoreA) > Number(scoreB) ? m.teamAId : m.teamBId;
 
     await setScore({
       tournamentId,
-      phase: id,
+      phase,
       code: id,
       scoreA,
       scoreB,
@@ -1007,6 +1209,20 @@ app.post(
           "One of those players is already on a team in this tournament."
         );
       }
+      const playersForDivision = await client.query(
+        `
+        select
+          id,
+          name,
+          dupr_rating as "duprRating",
+          self_rating as "selfRating"
+        from players
+        where id in ($1, $2);
+        `,
+        [playerAId, playerBId]
+      );
+
+      const division = teamDivisionFromPlayers(playersForDivision.rows);
 
       let finalName = requestedName;
       if (!finalName) {
@@ -1018,8 +1234,12 @@ app.post(
       }
 
       const teamRow = await client.query(
-        `insert into teams(name) values ($1) returning id, name;`,
-        [finalName]
+        `
+        insert into teams(name, division)
+        values ($1, $2)
+        returning id, name, division;
+        `,
+        [finalName, division]
       );
       const teamId = teamRow.rows[0].id;
 
@@ -1029,15 +1249,18 @@ app.post(
       );
 
       await client.query(
-        `insert into tournament_teams(tournament_id, team_id) values ($1, $2);`,
-        [tid, teamId]
+        `
+        insert into tournament_teams(tournament_id, team_id, division)
+        values ($1, $2, $3);
+        `,
+        [tid, teamId, division]
       );
 
       await client.query("COMMIT");
       res.json({
         ok: true,
         tournamentId: tid,
-        team: { id: teamId, name: finalName },
+        team: { id: teamId, name: finalName, division },
       });
     } catch (err) {
       await client.query("ROLLBACK");
@@ -1108,15 +1331,31 @@ app.post("/api/tournament/reset", async (req, res) => {
 app.post("/api/roundrobin/generate", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
-    const teams = await getTeamsForTournament(tournamentId);
+    const allTeams = await getTeamsForTournament(tournamentId);
 
-    if (teams.length < 3) {
+    const teamsByDivision = {};
+    for (const division of DIVISIONS) {
+      teamsByDivision[division] = allTeams.filter(
+        (team) => team.division === division
+      );
+    }
+
+    const playableDivisions = DIVISIONS.filter(
+      (division) => teamsByDivision[division].length >= 3
+    );
+
+    if (playableDivisions.length === 0) {
       return res.status(409).json({
-        error: "You need at least 3 teams to generate a round robin schedule.",
+        error:
+          "You need at least 3 teams in a division to generate a round robin schedule.",
       });
     }
 
-    const maxGamesPerTeam = teams.length - 1;
+    const maxGamesPerTeam = Math.min(
+      ...playableDivisions.map(
+        (division) => teamsByDivision[division].length - 1
+      )
+    );
 
     const raw = req.body?.gamesPerTeam;
     const hasExplicitGamesPerTeam =
@@ -1130,7 +1369,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     if (gamesPerTeam > maxGamesPerTeam) {
       return res.status(409).json({
-        error: `gamesPerTeam=${gamesPerTeam} is too large for ${teams.length} teams (max is ${maxGamesPerTeam}).`,
+        error: `gamesPerTeam=${gamesPerTeam} is too large for one of the divisions (max is ${maxGamesPerTeam}).`,
       });
     }
 
@@ -1144,8 +1383,30 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     const startTime = parseISODate(req.body?.startTimeISO);
     const endTime = parseISODate(req.body?.endTimeISO);
+    const rrMatches = [];
 
-    const rrMatches = engine.generateRoundRobinSchedule(teams, gamesPerTeam);
+    for (const division of playableDivisions) {
+      const divisionTeams = teamsByDivision[division];
+      const prefix = divisionPrefix(division);
+
+      const divisionGamesPerTeam = Math.min(
+        gamesPerTeam,
+        divisionTeams.length - 1
+      );
+
+      const rawMatches = engine.generateRoundRobinSchedule(
+        divisionTeams,
+        divisionGamesPerTeam
+      );
+
+      const spreadMatches = spreadOutMatches(rawMatches).map((m) => ({
+        ...m,
+        id: `${prefix}-${m.id}`,
+        division,
+      }));
+
+      rrMatches.push(...spreadMatches);
+    }
 
     await pool.query(
       `delete from matches where tournament_id = $1 and phase = 'RR';`,
@@ -1188,12 +1449,14 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
       for (const m of scheduled) {
         chunks.push(
-          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
+          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
         );
+
         params.push(
           tournamentId,
           m.id,
           "RR",
+          m.division,
           m.teamAId,
           m.teamBId,
           m.startTime ? m.startTime : null,
@@ -1205,7 +1468,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
       await pool.query(
         `
         insert into matches (
-          tournament_id, code, phase, team_a_id, team_b_id, start_time, court, status
+          tournament_id, code, phase, division, team_a_id, team_b_id, start_time, court, status
         )
         values ${chunks.join(", ")}
         `,
@@ -1214,11 +1477,11 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     }
 
     res.json({
-      teams,
+      teams: allTeams,
       matches: scheduled.map((m) => ({ ...m, status: "pending" })),
       tournamentId,
       meta: {
-        teamsCount: teams.length,
+        teamsCount: allTeams.length,
         gamesPerTeam,
         maxGamesPerTeam,
         rrMatchesCount: scheduled.length,
@@ -1711,7 +1974,6 @@ app.get("/api/matches", async (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const clientDistPath = path.join(__dirname, "..", "client", "dist");
   app.use(express.static(clientDistPath));
-
 
   app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(clientDistPath, "index.html"));

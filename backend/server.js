@@ -422,10 +422,28 @@ function computeQueue(matches) {
     unavailableTeams.add(teamB);
   }
 
+  // Interleave matches across divisions so both appear in the queue.
+  // If no division field exists, all matches go into one bucket and order is preserved.
+  const buckets = new Map();
+  for (const m of playableQueue) {
+    const key = m.division ?? "DEFAULT";
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(m);
+  }
+
+  const divQueues = [...buckets.values()];
+  const interleaved = [];
+  let i = 0;
+  while (interleaved.length < playableQueue.length) {
+    const bucket = divQueues[i % divQueues.length];
+    if (bucket.length > 0) interleaved.push(bucket.shift());
+    i++;
+  }
+
   return {
     currentlyOnCourt: onCourt,
-    nextOnDeck: playableQueue[0] ?? null,
-    upSoon: playableQueue.slice(1, 5),
+    nextOnDeck: interleaved[0] ?? null,
+    upSoon: interleaved.slice(1, 5),
   };
 }
 

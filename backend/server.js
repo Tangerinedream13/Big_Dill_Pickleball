@@ -347,47 +347,6 @@ app.post("/api/playoffs/reset", async (req, res) => {
   }
 });
 
-/* -----------------------------
-  Playoffs Generate (Semifinals)
------------------------------- */
-app.post("/api/playoffs/generate", async (req, res) => {
-  try {
-    const tournamentId = await resolveTournamentId(req);
-
-    // If semis already exist, don't duplicate
-    const existingSemis = await pool.query(
-      `
-      select code from matches
-      where tournament_id = $1 and phase = 'SF'
-      limit 1;
-      `,
-      [tournamentId]
-    );
-    if (existingSemis.rowCount > 0) {
-      return res.status(409).json({
-        error: "Semifinals already exist. Reset playoffs to regenerate.",
-      });
-    }
-
-    const teams = await getTeamsForTournament(tournamentId);
-    const rrMatches = await getMatchesForTournamentByPhase(tournamentId, [
-      "RR",
-    ]);
-
-    // RR must be complete (winnerId set for all matches; forfeits still set winnerId)
-    const rrIncomplete = rrMatches.filter((m) => !m.winnerId);
-    if (rrIncomplete.length > 0) {
-      return res.status(409).json({
-        error: `Round robin isn't complete yet. Missing winners for: ${rrIncomplete
-          .map((m) => m.id)
-          .join(", ")}`,
-      });
-    }
-
-    const standings = engine.computeStandings(
-      teams.map((t) => t.id),
-      rrMatches
-    );
 function computeQueue(matches) {
   const busyTeams = new Set();
 
@@ -405,10 +364,28 @@ function computeQueue(matches) {
     return true;
   });
 
+  // Interleave matches across divisions so both appear in the queue.
+  // If no division field exists, all matches go into one bucket and order is preserved.
+  const buckets = new Map();
+  for (const m of playable) {
+    const key = m.division ?? "DEFAULT";
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(m);
+  }
+
+  const divQueues = [...buckets.values()];
+  const interleaved = [];
+  let i = 0;
+  while (interleaved.length < playable.length) {
+    const bucket = divQueues[i % divQueues.length];
+    if (bucket.length > 0) interleaved.push(bucket.shift());
+    i++;
+  }
+
   return {
     currentlyOnCourt: matches.filter((m) => m.status === "on_court"),
-    nextOnDeck: playable[0] ?? null,
-    upSoon: playable.slice(1, 5),
+    nextOnDeck: interleaved[0] ?? null,
+    upSoon: interleaved.slice(1, 5),
   };
 }
 

@@ -83,7 +83,7 @@ app.use(
       sameSite: "lax",
       maxAge: 1000 * 60 * 60 * 24 * 7,
     },
-  })
+  }),
 );
 
 /* -----------------------------
@@ -170,7 +170,7 @@ function teamDivisionFromPlayers(players) {
 function validatePickleballScore(
   scoreA,
   scoreB,
-  { playTo = 11, winBy = 2 } = {}
+  { playTo = 11, winBy = 2 } = {},
 ) {
   if (!Number.isInteger(scoreA) || !Number.isInteger(scoreB)) {
     return "Scores must be integers.";
@@ -228,7 +228,7 @@ app.get("/health", (req, res) => {
 ------------------------------ */
 async function getDefaultTournamentId() {
   const r = await pool.query(
-    "select id from tournaments order by id desc limit 1;"
+    "select id from tournaments order by id desc limit 1;",
   );
   if (r.rowCount === 0)
     throw new Error("No tournaments found. Seed one first.");
@@ -271,7 +271,7 @@ async function getTeamsForTournament(tournamentId, division = null) {
       ${divisionFilter}
     order by coalesce(tt.seed, 999999), teams.id;
     `,
-    params
+    params,
   );
 
   return r.rows;
@@ -280,7 +280,7 @@ async function getTeamsForTournament(tournamentId, division = null) {
 async function getMatchesForTournamentByPhase(
   tournamentId,
   phases,
-  division = null
+  division = null,
 ) {
   const params = [tournamentId, phases];
 
@@ -321,7 +321,7 @@ async function getMatchesForTournamentByPhase(
       end,
       code;
     `,
-    params
+    params,
   );
 
   return r.rows.map((m) => ({
@@ -488,13 +488,13 @@ async function finalsAreScored(tournamentId, division) {
       and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2
     limit 2;
     `,
-    [tournamentId, division]
+    [tournamentId, division],
   );
 
   if (r.rowCount === 0) return false;
 
   return r.rows.some(
-    (m) => m.winner_id !== null || m.score_a !== null || m.score_b !== null
+    (m) => m.winner_id !== null || m.score_a !== null || m.score_b !== null,
   );
 }
 
@@ -508,7 +508,7 @@ async function clearMatch({ tournamentId, phase, code }) {
         status = 'pending'
     where tournament_id = $1 and phase = $2 and code = $3;
     `,
-    [tournamentId, phase, code]
+    [tournamentId, phase, code],
   );
 }
 
@@ -522,7 +522,7 @@ async function setWinnerOnly({ tournamentId, phase, code, winnerId }) {
         status = 'completed'
     where tournament_id = $2 and phase = $3 and code = $4;
     `,
-    [winnerId, tournamentId, phase, code]
+    [winnerId, tournamentId, phase, code],
   );
 }
 
@@ -543,7 +543,7 @@ async function setScore({
         status = 'completed'
     where tournament_id = $4 and phase = $5 and code = $6;
     `,
-    [scoreA, scoreB, winnerId, tournamentId, phase, code]
+    [scoreA, scoreB, winnerId, tournamentId, phase, code],
   );
 }
 
@@ -551,7 +551,7 @@ async function ensureFinalsFromSemis(tournamentId, division) {
   const semis = await getMatchesForTournamentByPhase(
     tournamentId,
     ["SF"],
-    division
+    division,
   );
 
   const prefix = divisionPrefix(division);
@@ -575,7 +575,7 @@ async function ensureFinalsFromSemis(tournamentId, division) {
       and phase in ('FINAL','THIRD')
       and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
     `,
-    [tournamentId, division]
+    [tournamentId, division],
   );
 
   await pool.query(
@@ -602,7 +602,7 @@ async function ensureFinalsFromSemis(tournamentId, division) {
       `${prefix}-THIRD`,
       sf1Loser,
       sf2Loser,
-    ]
+    ],
   );
 }
 
@@ -617,7 +617,7 @@ async function sendState(tournamentId, res) {
 
   const standings = engine.computeStandings(
     teams.map((t) => t.id),
-    rrMatches
+    rrMatches,
   );
 
   const placementsRaw = computePlacementsFromMatches({ semis, finals });
@@ -651,7 +651,7 @@ app.post("/api/playoffs/reset", async (req, res) => {
       where tournament_id = $1
         and phase in ('SF', 'FINAL', 'THIRD');
       `,
-      [tournamentId]
+      [tournamentId],
     );
 
     const deleted = result.rowCount || 0;
@@ -682,7 +682,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
       where tournament_id = $1 and phase = 'SF'
       limit 1;
       `,
-      [tournamentId]
+      [tournamentId],
     );
 
     if (existingSemis.rowCount > 0) {
@@ -702,7 +702,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
       where tournament_id = $1
         and phase in ('SF', 'FINAL', 'THIRD');
       `,
-      [tournamentId]
+      [tournamentId],
     );
 
     for (const division of DIVISIONS) {
@@ -710,7 +710,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
       const rrMatches = await getMatchesForTournamentByPhase(
         tournamentId,
         ["RR"],
-        division
+        division,
       );
 
       if (divisionTeams.length < 4) {
@@ -725,7 +725,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
       if (rrIncomplete.length > 0) {
         return res.status(409).json({
           error: `${divisionLabel(
-            division
+            division,
           )} round robin isn't complete yet. Missing winners for: ${rrIncomplete
             .map((m) => m.id)
             .join(", ")}`,
@@ -734,7 +734,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
 
       const standings = engine.computeStandings(
         divisionTeams.map((t) => t.id),
-        rrMatches
+        rrMatches,
       );
 
       standingsByDivision[division] = standings;
@@ -775,7 +775,7 @@ app.post("/api/playoffs/generate", async (req, res) => {
           `${prefix}-SF2`,
           seed2,
           seed3,
-        ]
+        ],
       );
 
       generated.push({
@@ -846,7 +846,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
       from matches
       where tournament_id = $1 and phase = 'SF' and code = $2
       `,
-      [tournamentId, id]
+      [tournamentId, id],
     );
 
     if (mRes.rowCount === 0) {
@@ -875,7 +875,7 @@ app.post("/api/playoffs/semis/:id/score", async (req, res) => {
           and phase in ('FINAL','THIRD')
           and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
         `,
-        [tournamentId, m.division]
+        [tournamentId, m.division],
       );
 
       return sendState(tournamentId, res);
@@ -963,7 +963,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
         and code = $2
         and phase = $3
       `,
-      [tournamentId, id, phase]
+      [tournamentId, id, phase],
     );
 
     if (mRes.rowCount === 0) {
@@ -1043,6 +1043,7 @@ app.post("/api/playoffs/finals/:id/score", async (req, res) => {
 
 app.get("/api/tournaments/:tid/players", async (req, res) => {
   const tid = Number(req.params.tid);
+
   if (!Number.isInteger(tid) || tid <= 0) {
     return res.status(400).json({ error: "Invalid tournament id." });
   }
@@ -1056,6 +1057,8 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
         p.dupr_rating as "duprRating",
         p.self_rating as "selfRating",
         p.skill_source as "skillSource",
+        p.checked_in as "checkedIn",
+        p.checked_in_at as "checkedInAt",
         exists (
           select 1
           from team_players tp
@@ -1068,17 +1071,80 @@ app.get("/api/tournaments/:tid/players", async (req, res) => {
       where tpp.tournament_id = $1
       order by p.id desc;
     `;
+
     const r = await pool.query(q, [tid]);
 
     res.json(
       r.rows.map((p) => ({
         ...p,
         duprTier: duprLabel(p.duprRating),
-      }))
+      })),
     );
   } catch (err) {
     console.error("GET /api/tournaments/:tid/players error:", err);
     res.status(500).json({ error: errToMessage(err) });
+  }
+});
+
+app.patch("/api/tournaments/:tid/players/:id/checkin", async (req, res) => {
+  try {
+    const tid = Number(req.params.tid);
+    const id = Number(req.params.id);
+    const checkedIn = Boolean(req.body.checkedIn);
+
+    if (!Number.isInteger(tid) || tid <= 0) {
+      return res.status(400).json({ error: "Invalid tournament id." });
+    }
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid player id." });
+    }
+
+    const result = await pool.query(
+      `
+      update players p
+      set checked_in = $1,
+          checked_in_at = case
+            when $1 = true then now()
+            else null
+          end
+      from tournament_players tp
+      where p.id = tp.player_id
+        and tp.tournament_id = $2
+        and p.id = $3
+      returning
+        p.id,
+        p.name,
+        p.email,
+        p.dupr_rating as "duprRating",
+        p.self_rating as "selfRating",
+        p.skill_source as "skillSource",
+        p.checked_in as "checkedIn",
+        p.checked_in_at as "checkedInAt";
+      `,
+      [checkedIn, tid, id],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Player not found." });
+    }
+
+    return res.json({
+      ok: true,
+      player: {
+        ...result.rows[0],
+        duprTier: duprLabel(result.rows[0].duprRating),
+      },
+    });
+  } catch (err) {
+    console.error(
+      "PATCH /api/tournaments/:tid/players/:id/checkin error:",
+      err,
+    );
+
+    return res.status(500).json({
+      error: errToMessage(err),
+    });
   }
 });
 
@@ -1103,7 +1169,7 @@ app.delete("/api/tournaments/:tid/players/:id", async (req, res) => {
         and tp.player_id = $2
       limit 1;
       `,
-      [tid, id]
+      [tid, id],
     );
 
     if (teamUse.rowCount > 0) {
@@ -1117,7 +1183,7 @@ app.delete("/api/tournaments/:tid/players/:id", async (req, res) => {
       delete from tournament_players
       where tournament_id = $1 and player_id = $2;
       `,
-      [tid, id]
+      [tid, id],
     );
 
     const stillUsedElsewhere = await pool.query(
@@ -1127,7 +1193,7 @@ app.delete("/api/tournaments/:tid/players/:id", async (req, res) => {
       where player_id = $1
       limit 1;
       `,
-      [id]
+      [id],
     );
 
     if (stillUsedElsewhere.rowCount === 0) {
@@ -1137,7 +1203,7 @@ app.delete("/api/tournaments/:tid/players/:id", async (req, res) => {
         where id = $1
         returning id;
         `,
-        [id]
+        [id],
       );
 
       if (deleted.rowCount === 0) {
@@ -1186,7 +1252,7 @@ app.post(
       where tournament_id = $1
         and player_id in ($2, $3);
       `,
-        [tid, playerAId, playerBId]
+        [tid, playerAId, playerBId],
       );
 
       if (inTournament.rows?.[0]?.c !== 2) {
@@ -1202,11 +1268,11 @@ app.post(
         and tp.player_id in ($2, $3)
       limit 1;
       `,
-        [tid, playerAId, playerBId]
+        [tid, playerAId, playerBId],
       );
       if (alreadyOnTeam.rowCount > 0) {
         throw new Error(
-          "One of those players is already on a team in this tournament."
+          "One of those players is already on a team in this tournament.",
         );
       }
       const playersForDivision = await client.query(
@@ -1219,7 +1285,7 @@ app.post(
         from players
         where id in ($1, $2);
         `,
-        [playerAId, playerBId]
+        [playerAId, playerBId],
       );
 
       const division = teamDivisionFromPlayers(playersForDivision.rows);
@@ -1228,7 +1294,7 @@ app.post(
       if (!finalName) {
         const n = await client.query(
           `select count(*)::int as c from tournament_teams where tournament_id = $1;`,
-          [tid]
+          [tid],
         );
         finalName = `SPD-${tid}-Team-${(n.rows?.[0]?.c ?? 0) + 1}`;
       }
@@ -1239,13 +1305,13 @@ app.post(
         values ($1, $2)
         returning id, name, division;
         `,
-        [finalName, division]
+        [finalName, division],
       );
       const teamId = teamRow.rows[0].id;
 
       await client.query(
         `insert into team_players(team_id, player_id) values ($1, $2), ($1, $3);`,
-        [teamId, playerAId, playerBId]
+        [teamId, playerAId, playerBId],
       );
 
       await client.query(
@@ -1253,7 +1319,7 @@ app.post(
         insert into tournament_teams(tournament_id, team_id, division)
         values ($1, $2, $3);
         `,
-        [tid, teamId, division]
+        [tid, teamId, division],
       );
 
       await client.query("COMMIT");
@@ -1269,7 +1335,7 @@ app.post(
     } finally {
       client.release();
     }
-  }
+  },
 );
 
 /* -----------------------------
@@ -1292,7 +1358,7 @@ app.get("/api/tournament/state", async (req, res) => {
 
     const standings = engine.computeStandings(
       teams.map((t) => t.id),
-      rrMatches
+      rrMatches,
     );
 
     const placementsRaw = computePlacementsFromMatches({ semis, finals });
@@ -1336,12 +1402,12 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     const teamsByDivision = {};
     for (const division of DIVISIONS) {
       teamsByDivision[division] = allTeams.filter(
-        (team) => team.division === division
+        (team) => team.division === division,
       );
     }
 
     const playableDivisions = DIVISIONS.filter(
-      (division) => teamsByDivision[division].length >= 3
+      (division) => teamsByDivision[division].length >= 3,
     );
 
     if (playableDivisions.length === 0) {
@@ -1353,8 +1419,8 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     const maxGamesPerTeam = Math.min(
       ...playableDivisions.map(
-        (division) => teamsByDivision[division].length - 1
-      )
+        (division) => teamsByDivision[division].length - 1,
+      ),
     );
 
     const raw = req.body?.gamesPerTeam;
@@ -1391,12 +1457,12 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
       const divisionGamesPerTeam = Math.min(
         gamesPerTeam,
-        divisionTeams.length - 1
+        divisionTeams.length - 1,
       );
 
       const rawMatches = engine.generateRoundRobinSchedule(
         divisionTeams,
-        divisionGamesPerTeam
+        divisionGamesPerTeam,
       );
 
       const spreadMatches = spreadOutMatches(rawMatches).map((m) => ({
@@ -1410,11 +1476,11 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
     await pool.query(
       `delete from matches where tournament_id = $1 and phase = 'RR';`,
-      [tournamentId]
+      [tournamentId],
     );
     await pool.query(
       `delete from matches where tournament_id = $1 and phase in ('SF','FINAL','THIRD');`,
-      [tournamentId]
+      [tournamentId],
     );
 
     let scheduled = rrMatches.map((m) => ({
@@ -1449,7 +1515,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
 
       for (const m of scheduled) {
         chunks.push(
-          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`
+          `($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`,
         );
 
         params.push(
@@ -1461,7 +1527,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
           m.teamBId,
           m.startTime ? m.startTime : null,
           m.court ? m.court : null,
-          "pending"
+          "pending",
         );
       }
 
@@ -1472,7 +1538,7 @@ app.post("/api/roundrobin/generate", async (req, res) => {
         )
         values ${chunks.join(", ")}
         `,
-        params
+        params,
       );
     }
 
@@ -1517,7 +1583,7 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
         and code = $2
         and phase = 'RR'
       `,
-      [tournamentId, code]
+      [tournamentId, code],
     );
 
     if (mRes.rowCount === 0) {
@@ -1555,7 +1621,7 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
           and code = $3
           and phase = 'RR'
         `,
-        [w, tournamentId, code]
+        [w, tournamentId, code],
       );
     } else {
       const msg = validatePickleballScore(scoreA, scoreB, {
@@ -1577,7 +1643,7 @@ app.patch("/api/roundrobin/matches/:code/score", async (req, res) => {
           and code = $5
           and phase = 'RR'
         `,
-        [scoreA, scoreB, winnerId, tournamentId, code]
+        [scoreA, scoreB, winnerId, tournamentId, code],
       );
     }
 
@@ -1607,7 +1673,7 @@ app.post("/api/matches/:code/on-court", async (req, res) => {
       from matches
       where tournament_id = $1 and code = $2
       `,
-      [tournamentId, code]
+      [tournamentId, code],
     );
 
     if (mRes.rowCount === 0) {
@@ -1635,7 +1701,7 @@ app.post("/api/matches/:code/on-court", async (req, res) => {
         )
       limit 1
       `,
-      [tournamentId, code, match.teamAId, match.teamBId]
+      [tournamentId, code, match.teamAId, match.teamBId],
     );
 
     if (busyRes.rowCount > 0) {
@@ -1650,7 +1716,7 @@ app.post("/api/matches/:code/on-court", async (req, res) => {
       set status = 'on_court'
       where tournament_id = $1 and code = $2
       `,
-      [tournamentId, code]
+      [tournamentId, code],
     );
 
     return sendState(tournamentId, res);
@@ -1673,7 +1739,7 @@ app.post("/api/matches/:code/reset-status", async (req, res) => {
         and code = $2
         and winner_id is null
       `,
-      [tournamentId, code]
+      [tournamentId, code],
     );
 
     return sendState(tournamentId, res);
@@ -1690,7 +1756,7 @@ async function queryPlayersScoped(
   withTournamentSql,
   withTournamentParams,
   withoutTournamentSql,
-  withoutTournamentParams
+  withoutTournamentParams,
 ) {
   try {
     return await pool.query(withTournamentSql, withTournamentParams);
@@ -1745,11 +1811,11 @@ app.get("/api/players", async (req, res) => {
       withT,
       [tournamentId, qRaw, isNumericQuery, qRounded, `%${qRaw}%`],
       withoutT,
-      [qRaw, isNumericQuery, qRounded, `%${qRaw}%`]
+      [qRaw, isNumericQuery, qRounded, `%${qRaw}%`],
     );
 
     res.json(
-      result.rows.map((p) => ({ ...p, duprTier: duprLabel(p.duprRating) }))
+      result.rows.map((p) => ({ ...p, duprTier: duprLabel(p.duprRating) })),
     );
   } catch (err) {
     console.error("GET /api/players error:", err);
@@ -1788,7 +1854,7 @@ app.post("/api/players", async (req, res) => {
       withT,
       [tournamentId, name, email, dupr],
       withoutT,
-      [name, email, dupr]
+      [name, email, dupr],
     );
 
     const p = inserted.rows[0];
@@ -1861,7 +1927,7 @@ app.patch(
         withT2,
         [nameParam, emailParam, duprParam, tournamentId, id],
         withoutT2,
-        [nameParam, emailParam, duprParam, id]
+        [nameParam, emailParam, duprParam, id],
       );
 
       if (updated.rowCount === 0)
@@ -1873,7 +1939,7 @@ app.patch(
       console.error("PATCH /api/players/:id error:", err);
       res.status(500).json({ error: errToMessage(err) });
     }
-  }
+  },
 );
 
 app.delete("/api/players/:id", async (req, res) => {
@@ -1898,7 +1964,7 @@ app.delete("/api/players/:id", async (req, res) => {
       withT,
       [tournamentId, id],
       withoutT,
-      [id]
+      [id],
     );
 
     if (deleted.rowCount === 0)
@@ -1952,7 +2018,7 @@ app.get("/api/matches", async (req, res) => {
         end,
         code;
       `,
-      params
+      params,
     );
 
     res.json({

@@ -1,0 +1,7 @@
+ALTER TABLE players
+ADD COLUMN checked_in BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE players
+ADD COLUMN checked_in_at TIMESTAMP;
+
+

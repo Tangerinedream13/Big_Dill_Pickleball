@@ -29,6 +29,10 @@ import {
   User,
   CalendarDays,
   Home,
+  CheckCircle2,
+  Circle,
+  EyeOff,
+  Eye,
 } from "lucide-react";
 
 import { consumeOptimisticPlayer } from "./optimisticPlayerStore";
@@ -117,7 +121,25 @@ const selfRatingCollection = createListCollection({
   ],
 });
 
-function PlayersCardList({ players, onDelete, playerTeamMap }) {
+function CheckInIcon({ checked, loading }) {
+  return (
+    <Box
+      color={checked ? "green.500" : "gray.300"}
+      style={{ opacity: loading ? 0.4 : 1, display: "flex", alignItems: "center" }}
+    >
+      {checked ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+    </Box>
+  );
+}
+
+function teamCheckinLabel(checkinCount, total) {
+  if (total === 0) return null;
+  if (checkinCount === total) return { text: "Both In", ready: true };
+  if (checkinCount === 1) return { text: "1 / 2 In", ready: false, partial: true };
+  return { text: "Not In", ready: false, partial: false };
+}
+
+function PlayersCardList({ players, onDelete, playerTeamMap, onToggleCheckIn, checkingInId }) {
   return (
     <Stack gap={3}>
       {players.map((p) => {
@@ -126,38 +148,59 @@ function PlayersCardList({ players, onDelete, playerTeamMap }) {
         const teamName = playerTeamMap?.get(String(p.id)) ?? "";
         const selfRating = p.selfRating ?? p.self_rating ?? "";
         const skillSource = p.skillSource ?? p.skill_source ?? "";
+        const isCheckedIn = p.checkedIn ?? false;
+        const isLoading = checkingInId === p.id;
 
         return (
           <Box
             key={p.id ?? p.email ?? p.name}
             border="1px solid"
-            borderColor="border"
+            borderColor={isCheckedIn ? "green.300" : "border"}
             borderRadius="2xl"
             p={4}
-            bg={p._optimistic ? "green.50" : "white"}
+            bg={isCheckedIn ? "green.50" : p._optimistic ? "green.50" : "white"}
+            transition="background 0.15s, border-color 0.15s"
           >
             <HStack justify="space-between" align="start" gap={3}>
-              <Box>
-                <Text fontWeight="800">
-                  {p.name ?? "Unnamed"}
-                  {p._optimistic ? (
-                    <Badge ml={2} variant="pickle">
-                      Just joined
-                    </Badge>
-                  ) : null}
-                </Text>
+              <HStack gap={3} align="start" flex={1}>
+                {!p._optimistic ? (
+                  <Box
+                    as="button"
+                    onClick={() => onToggleCheckIn(p.id, isCheckedIn)}
+                    disabled={isLoading}
+                    flexShrink={0}
+                    mt="2px"
+                    style={{ cursor: isLoading ? "wait" : "pointer", background: "none", border: "none", padding: 0 }}
+                  >
+                    <CheckInIcon checked={isCheckedIn} loading={isLoading} />
+                  </Box>
+                ) : null}
 
-                <HStack mt={2} gap={2} wrap="wrap">
-                  <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
-                  <Badge variant="club">{tier}</Badge>
-                  {skillSource === "self_rating" && selfRating ? (
-                    <Badge variant="outline">
-                      Self-rated: {formatSelfRating(selfRating)}
-                    </Badge>
-                  ) : null}
-                  {teamName ? <Badge variant="pickle">{teamName}</Badge> : null}
-                </HStack>
-              </Box>
+                <Box>
+                  <HStack gap={2} wrap="wrap">
+                    <Text fontWeight="800">
+                      {p.name ?? "Unnamed"}
+                    </Text>
+                    {p._optimistic ? (
+                      <Badge variant="pickle">Just joined</Badge>
+                    ) : null}
+                    {isCheckedIn ? (
+                      <Badge variant="pickle">Checked In</Badge>
+                    ) : null}
+                  </HStack>
+
+                  <HStack mt={2} gap={2} wrap="wrap">
+                    <Badge variant="club">DUPR: {formatDupr(duprVal)}</Badge>
+                    <Badge variant="club">{tier}</Badge>
+                    {skillSource === "self_rating" && selfRating ? (
+                      <Badge variant="outline">
+                        Self-rated: {formatSelfRating(selfRating)}
+                      </Badge>
+                    ) : null}
+                    {teamName ? <Badge variant="pickle">{teamName}</Badge> : null}
+                  </HStack>
+                </Box>
+              </HStack>
 
               {!p._optimistic ? (
                 <IconButton
@@ -176,51 +219,71 @@ function PlayersCardList({ players, onDelete, playerTeamMap }) {
   );
 }
 
-function TeamsCardList({ teams, onRename, onDelete, deletingTeamId, tid }) {
+function TeamsCardList({ teams, onRename, onDelete, deletingTeamId, tid, teamCheckinMap }) {
   return (
     <Stack gap={3}>
-      {teams.map((t) => (
-        <Box
-          key={t.id}
-          border="1px solid"
-          borderColor="border"
-          borderRadius="2xl"
-          p={4}
-          bg="white"
-        >
-          <HStack justify="space-between" align="start" gap={3}>
-            <Box>
-              <Text fontWeight="800">{t.name}</Text>
-              <Text mt={2} fontWeight="600" opacity={0.9}>
-                {(t.players ?? [])
-                  .map((p) => p.name)
-                  .filter(Boolean)
-                  .join(" / ") || "—"}
-              </Text>
-            </Box>
+      {teams.map((t) => {
+        const checkin = teamCheckinMap?.get(String(t.id));
+        const checkinCount = checkin?.checkedInCount ?? 0;
+        const total = checkin?.total ?? 0;
+        const label = teamCheckinLabel(checkinCount, total);
+        const isReady = label?.ready ?? false;
+        const isPartial = label?.partial ?? false;
 
-            <HStack gap={2} wrap="wrap" justify="flex-end">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onRename(t)}
-                disabled={!tid}
-              >
-                Rename
-              </Button>
+        return (
+          <Box
+            key={t.id}
+            border="1px solid"
+            borderColor={isReady ? "green.300" : isPartial ? "orange.200" : "border"}
+            borderRadius="2xl"
+            p={4}
+            bg={isReady ? "green.50" : "white"}
+            transition="background 0.15s, border-color 0.15s"
+          >
+            <HStack justify="space-between" align="start" gap={3}>
+              <Box flex={1}>
+                <HStack gap={2} wrap="wrap" align="center">
+                  <Box color={isReady ? "green.500" : "gray.300"} display="flex" alignItems="center">
+                    {isReady ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                  </Box>
+                  <Text fontWeight="800">{t.name}</Text>
+                  {label ? (
+                    <Badge variant={isReady ? "pickle" : "outline"}>
+                      {label.text}
+                    </Badge>
+                  ) : null}
+                </HStack>
+                <Text mt={2} fontWeight="600" opacity={0.9} pl={7}>
+                  {(t.players ?? [])
+                    .map((p) => p.name)
+                    .filter(Boolean)
+                    .join(" / ") || "—"}
+                </Text>
+              </Box>
 
-              <IconButton
-                aria-label="Delete team"
-                variant="outline"
-                onClick={() => onDelete(t.id)}
-                disabled={!tid || deletingTeamId === t.id}
-              >
-                <Trash2 size={16} />
-              </IconButton>
+              <HStack gap={2} wrap="wrap" justify="flex-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onRename(t)}
+                  disabled={!tid}
+                >
+                  Rename
+                </Button>
+
+                <IconButton
+                  aria-label="Delete team"
+                  variant="outline"
+                  onClick={() => onDelete(t.id)}
+                  disabled={!tid || deletingTeamId === t.id}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              </HStack>
             </HStack>
-          </HStack>
-        </Box>
-      ))}
+          </Box>
+        );
+      })}
     </Stack>
   );
 }
@@ -247,6 +310,8 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState([]);
   const [status, setStatus] = useState("loading");
   const [query, setQuery] = useState("");
+  const [hideCheckedIn, setHideCheckedIn] = useState(false);
+  const [checkingInId, setCheckingInId] = useState(null);
   const isMobile = useBreakpointValue({ base: true, md: false });
 
   // Create player modal
@@ -366,11 +431,87 @@ export default function PlayersPage() {
     loadTeams();
   }, [tid]);
 
+  async function toggleCheckIn(playerId, currentCheckedIn) {
+    if (checkingInId === playerId) return;
+    setCheckingInId(playerId);
+
+    // Optimistic update
+    setPlayers((prev) =>
+      prev.map((p) =>
+        p.id === playerId ? { ...p, checkedIn: !currentCheckedIn } : p
+      )
+    );
+
+    try {
+      const res = await fetch(
+        apiUrl(`/api/tournaments/${tid}/players/${playerId}/checkin`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ checkedIn: !currentCheckedIn }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to update check-in.");
+
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === playerId
+            ? {
+                ...p,
+                checkedIn: data.player.checkedIn,
+                checkedInAt: data.player.checkedInAt,
+              }
+            : p
+        )
+      );
+    } catch (e) {
+      // Revert on error
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === playerId ? { ...p, checkedIn: currentCheckedIn } : p
+        )
+      );
+      console.error(e);
+      alert(e.message || "Could not update check-in status.");
+    } finally {
+      setCheckingInId(null);
+    }
+  }
+
+  const checkedInCount = useMemo(
+    () => players.filter((p) => p.checkedIn).length,
+    [players]
+  );
+
+  const teamCheckinMap = useMemo(() => {
+    const playerCheckinById = new Map(
+      players.map((p) => [String(p.id), p.checkedIn ?? false])
+    );
+    const m = new Map();
+    for (const t of teams) {
+      const teamPlayers = t.players ?? [];
+      const count = teamPlayers.filter((p) =>
+        playerCheckinById.get(String(p.id))
+      ).length;
+      m.set(String(t.id), { checkedInCount: count, total: teamPlayers.length });
+    }
+    return m;
+  }, [players, teams]);
+
+  const fullyCheckedTeamsCount = useMemo(() => {
+    let count = 0;
+    for (const v of teamCheckinMap.values()) {
+      if (v.total > 0 && v.checkedInCount === v.total) count++;
+    }
+    return count;
+  }, [teamCheckinMap]);
+
   const filteredPlayers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return players;
-
     return players.filter((p) => {
+      if (hideCheckedIn && (p.checkedIn ?? false)) return false;
+      if (!q) return true;
       const name = (p.name ?? "").toLowerCase();
       const duprVal = p.duprRating ?? p.dupr_rating ?? p.dupr ?? "";
       const selfRating = (p.selfRating ?? p.self_rating ?? "").toLowerCase();
@@ -380,7 +521,7 @@ export default function PlayersPage() {
         selfRating.includes(q)
       );
     });
-  }, [players, query]);
+  }, [players, query, hideCheckedIn]);
 
   const beginnerIntermediatePlayers = useMemo(() => {
     return filteredPlayers.filter(
@@ -706,7 +847,6 @@ export default function PlayersPage() {
               >
                 <Home size={18} />
               </IconButton>
-              {/* Page icon - no box */}
               <User size={18} />
 
               <Heading size="lg" letterSpacing="-0.02em">
@@ -714,6 +854,19 @@ export default function PlayersPage() {
               </Heading>
 
               <Badge variant="pickle">{players?.length ?? 0} total</Badge>
+
+              {status === "ok" && players.length > 0 ? (
+                <>
+                  <Badge variant={checkedInCount === players.length && players.length > 0 ? "pickle" : "club"}>
+                    {checkedInCount} / {players.length} checked in
+                  </Badge>
+                  {teams.length > 0 ? (
+                    <Badge variant={fullyCheckedTeamsCount === teams.length && teams.length > 0 ? "pickle" : "club"}>
+                      {fullyCheckedTeamsCount} / {teams.length} teams ready
+                    </Badge>
+                  ) : null}
+                </>
+              ) : null}
 
               {status === "loading" && <Badge variant="club">Loading…</Badge>}
               {status === "error" && (
@@ -724,8 +877,9 @@ export default function PlayersPage() {
           </Flex>
 
           <Text opacity={0.85}>
-            Search by <b>name</b>, <b>DUPR</b>, or <b>skill level</b>. Then
-            create doubles teams below.
+            Search by <b>name</b>, <b>DUPR</b>, or <b>skill level</b>. Click
+            the circle next to a player to check them in. Then create doubles
+            teams below.
           </Text>
         </Stack>
       </StickyPageHeader>
@@ -761,6 +915,17 @@ export default function PlayersPage() {
               justify={{ base: "flex-start", md: "flex-end" }}
               wrap="wrap"
             >
+              <Button
+                variant={hideCheckedIn ? "pickle" : "outline"}
+                onClick={() => setHideCheckedIn((v) => !v)}
+                size="md"
+              >
+                <HStack gap={2}>
+                  {hideCheckedIn ? <EyeOff size={15} /> : <Eye size={15} />}
+                  <Text>{hideCheckedIn ? "Showing Unchecked" : "Hide Checked-In"}</Text>
+                </HStack>
+              </Button>
+
               <Button
                 variant="pickle"
                 onClick={() => setOpenPlayer(true)}
@@ -800,20 +965,26 @@ export default function PlayersPage() {
                   bg="cream.50"
                 >
                   <Heading size="md" mb={2}>
-                    No players found
+                    {hideCheckedIn && players.length > 0
+                      ? "All players checked in!"
+                      : "No players found"}
                   </Heading>
                   <Text opacity={0.8} mb={5}>
-                    {tid
+                    {hideCheckedIn && players.length > 0
+                      ? "Everyone has arrived. You're ready to go!"
+                      : tid
                       ? "Try a different search, or add your first player."
                       : "Select a tournament first on the Home page."}
                   </Text>
-                  <Button
-                    variant="pickle"
-                    onClick={() => setOpenPlayer(true)}
-                    isDisabled={!tid}
-                  >
-                    Add Player
-                  </Button>
+                  {!(hideCheckedIn && players.length > 0) ? (
+                    <Button
+                      variant="pickle"
+                      onClick={() => setOpenPlayer(true)}
+                      isDisabled={!tid}
+                    >
+                      Add Player
+                    </Button>
+                  ) : null}
                 </Box>
               ) : (
                 <Stack gap={5}>
@@ -875,6 +1046,8 @@ export default function PlayersPage() {
                           players={players}
                           onDelete={deletePlayer}
                           playerTeamMap={playerTeamMap}
+                          onToggleCheckIn={toggleCheckIn}
+                          checkingInId={checkingInId}
                         />
                       ) : (
                         <Box
@@ -885,6 +1058,7 @@ export default function PlayersPage() {
                           <Table.Root size="md" variant="outline">
                             <Table.Header>
                               <Table.Row>
+                                <Table.ColumnHeader w="44px" />
                                 <Table.ColumnHeader>Name</Table.ColumnHeader>
                                 <Table.ColumnHeader>DUPR</Table.ColumnHeader>
                                 <Table.ColumnHeader>Tier</Table.ColumnHeader>
@@ -913,11 +1087,39 @@ export default function PlayersPage() {
                                   p.selfRating ?? p.self_rating ?? "";
                                 const skillSource =
                                   p.skillSource ?? p.skill_source ?? "";
+                                const isCheckedIn = p.checkedIn ?? false;
+                                const isLoading = checkingInId === p.id;
 
                                 return (
-                                  <Table.Row key={p.id ?? p.email ?? p.name}>
+                                  <Table.Row
+                                    key={p.id ?? p.email ?? p.name}
+                                    bg={isCheckedIn ? "green.50" : undefined}
+                                  >
+                                    <Table.Cell>
+                                      {!p._optimistic ? (
+                                        <Box
+                                          as="button"
+                                          onClick={() => toggleCheckIn(p.id, isCheckedIn)}
+                                          disabled={isLoading}
+                                          style={{
+                                            cursor: isLoading ? "wait" : "pointer",
+                                            background: "none",
+                                            border: "none",
+                                            padding: 0,
+                                            display: "flex",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <CheckInIcon checked={isCheckedIn} loading={isLoading} />
+                                        </Box>
+                                      ) : null}
+                                    </Table.Cell>
+
                                     <Table.Cell fontWeight="600">
                                       {p.name ?? "Unnamed"}
+                                      {isCheckedIn ? (
+                                        <Badge ml={2} variant="pickle" size="sm">In</Badge>
+                                      ) : null}
                                     </Table.Cell>
 
                                     <Table.Cell>
@@ -1007,6 +1209,12 @@ export default function PlayersPage() {
                   ) : (
                     <Badge variant="pickle">{teams.length} teams</Badge>
                   )}
+
+                  {teams.length > 0 ? (
+                    <Badge variant={fullyCheckedTeamsCount === teams.length ? "pickle" : "club"}>
+                      {fullyCheckedTeamsCount} / {teams.length} ready
+                    </Badge>
+                  ) : null}
 
                   {teamsError ? <Badge variant="club">Issue</Badge> : null}
                 </HStack>
@@ -1164,6 +1372,7 @@ export default function PlayersPage() {
                             onDelete={deleteTeam}
                             deletingTeamId={deletingTeamId}
                             tid={tid}
+                            teamCheckinMap={teamCheckinMap}
                           />
                         ) : (
                           <Box
@@ -1174,12 +1383,16 @@ export default function PlayersPage() {
                             <Table.Root size="md" variant="outline">
                               <Table.Header>
                                 <Table.Row>
+                                  <Table.ColumnHeader w="44px" />
                                   <Table.ColumnHeader>Team</Table.ColumnHeader>
                                   <Table.ColumnHeader>
                                     Players
                                   </Table.ColumnHeader>
                                   <Table.ColumnHeader>
                                     Division
+                                  </Table.ColumnHeader>
+                                  <Table.ColumnHeader>
+                                    Check-In
                                   </Table.ColumnHeader>
                                   <Table.ColumnHeader textAlign="end">
                                     Actions
@@ -1188,62 +1401,89 @@ export default function PlayersPage() {
                               </Table.Header>
 
                               <Table.Body>
-                                {teams.map((t) => (
-                                  <Table.Row key={t.id}>
-                                    <Table.Cell fontWeight="700">
-                                      {t.name}
-                                    </Table.Cell>
+                                {teams.map((t) => {
+                                  const checkin = teamCheckinMap.get(String(t.id));
+                                  const checkinCount = checkin?.checkedInCount ?? 0;
+                                  const total = checkin?.total ?? 0;
+                                  const label = teamCheckinLabel(checkinCount, total);
+                                  const isReady = label?.ready ?? false;
 
-                                    <Table.Cell>
-                                      <Text fontWeight="600">
-                                        {(t.players ?? [])
-                                          .map((p) => p.name)
-                                          .filter(Boolean)
-                                          .join(" / ") || "—"}
-                                      </Text>
-                                    </Table.Cell>
+                                  return (
+                                    <Table.Row
+                                      key={t.id}
+                                      bg={isReady ? "green.50" : undefined}
+                                    >
+                                      <Table.Cell>
+                                        <Box color={isReady ? "green.500" : "gray.300"} display="flex" alignItems="center">
+                                          {isReady ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                                        </Box>
+                                      </Table.Cell>
 
-                                    <Table.Cell>
-                                      <Badge
-                                        variant={
-                                          division === "ADVANCED"
-                                            ? "pickle"
-                                            : "club"
-                                        }
-                                      >
-                                        {divisionLabel(division)}
-                                      </Badge>
-                                    </Table.Cell>
+                                      <Table.Cell fontWeight="700">
+                                        {t.name}
+                                      </Table.Cell>
 
-                                    <Table.Cell textAlign="end">
-                                      <HStack
-                                        justify="flex-end"
-                                        gap={2}
-                                        wrap="wrap"
-                                      >
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => openRenameModal(t)}
-                                          isDisabled={!tid}
-                                        >
-                                          Rename
-                                        </Button>
+                                      <Table.Cell>
+                                        <Text fontWeight="600">
+                                          {(t.players ?? [])
+                                            .map((p) => p.name)
+                                            .filter(Boolean)
+                                            .join(" / ") || "—"}
+                                        </Text>
+                                      </Table.Cell>
 
-                                        <IconButton
-                                          aria-label="Delete team"
-                                          variant="outline"
-                                          onClick={() => deleteTeam(t.id)}
-                                          isDisabled={
-                                            !tid || deletingTeamId === t.id
+                                      <Table.Cell>
+                                        <Badge
+                                          variant={
+                                            division === "ADVANCED"
+                                              ? "pickle"
+                                              : "club"
                                           }
                                         >
-                                          <Trash2 size={16} />
-                                        </IconButton>
-                                      </HStack>
-                                    </Table.Cell>
-                                  </Table.Row>
-                                ))}
+                                          {divisionLabel(division)}
+                                        </Badge>
+                                      </Table.Cell>
+
+                                      <Table.Cell>
+                                        {label ? (
+                                          <Badge variant={isReady ? "pickle" : "outline"}>
+                                            {label.text}
+                                          </Badge>
+                                        ) : (
+                                          <Text opacity={0.5}>—</Text>
+                                        )}
+                                      </Table.Cell>
+
+                                      <Table.Cell textAlign="end">
+                                        <HStack
+                                          justify="flex-end"
+                                          gap={2}
+                                          wrap="wrap"
+                                        >
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => openRenameModal(t)}
+                                            isDisabled={!tid}
+                                          >
+                                            Rename
+                                          </Button>
+
+                                          <IconButton
+                                            aria-label="Delete team"
+                                            variant="outline"
+                                            onClick={() => deleteTeam(t.id)}
+                                            isDisabled={
+                                              !tid || deletingTeamId === t.id
+                                            }
+                                          >
+                                            <Trash2 size={16} />
+                                          </IconButton>
+                                        </HStack>
+                                      </Table.Cell>
+                                    </Table.Row>
+                                  );
+                                })}
                               </Table.Body>
                             </Table.Root>
                           </Box>

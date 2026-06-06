@@ -809,10 +809,18 @@ export default function MatchSchedule() {
   }, [finalMatches, thirdMatches]);
 
   const tournamentComplete = useMemo(() => {
-    return (
-      placementMatches.length > 0 && placementMatches.every((m) => !!m.winnerId)
-    );
-  }, [placementMatches]);
+    const divisionsWithRR = [
+      advRrMatches.length > 0 ? "ADVANCED" : null,
+      biRrMatches.length > 0 ? "BEGINNER_INTERMEDIATE" : null,
+    ].filter(Boolean);
+
+    if (divisionsWithRR.length === 0) return false;
+
+    return divisionsWithRR.every((div) => {
+      const divFinals = placementMatches.filter((m) => m.division === div);
+      return divFinals.length > 0 && divFinals.every((m) => !!m.winnerId);
+    });
+  }, [placementMatches, advRrMatches, biRrMatches]);
 
   const finalsConfirmed = useMemo(() => {
     return placementMatches.some((m) => !!m.winnerId);

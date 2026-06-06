@@ -569,8 +569,10 @@ export default function MatchSchedule() {
 
   const [resetError, setResetError] = useState("");
   const [resettingPlayoffs, setResettingPlayoffs] = useState(false);
+  const [advancingAdvSemis, setAdvancingAdvSemis] = useState(false);
+  const [advancingBISemis, setAdvancingBISemis] = useState(false);
   const [resetPlayoffsError, setResetPlayoffsError] = useState("");
-  const [advancingSemis, setAdvancingSemis] = useState(false);
+
   const [advanceSemisError, setAdvanceSemisError] = useState("");
   const [advancingFinals, setAdvancingFinals] = useState(false);
   const [advanceFinalsError, setAdvanceFinalsError] = useState("");
@@ -768,6 +770,31 @@ export default function MatchSchedule() {
   const semisExist = semis.length > 0;
   const semisComplete = semisExist && semis.every((m) => m.winnerId);
   const finalsExist = finals.length > 0;
+
+  const advRrMatches = useMemo(
+    () => rrMatches.filter((m) => m.division === "ADVANCED"),
+    [rrMatches]
+  );
+  const biRrMatches = useMemo(
+    () => rrMatches.filter((m) => m.division === "BEGINNER_INTERMEDIATE"),
+    [rrMatches]
+  );
+  const advRrComplete = useMemo(
+    () => advRrMatches.length > 0 && advRrMatches.every((m) => m.winnerId),
+    [advRrMatches]
+  );
+  const biRrComplete = useMemo(
+    () => biRrMatches.length > 0 && biRrMatches.every((m) => m.winnerId),
+    [biRrMatches]
+  );
+  const advSemisExist = useMemo(
+    () => semis.some((m) => m.division === "ADVANCED"),
+    [semis]
+  );
+  const biSemisExist = useMemo(
+    () => semis.some((m) => m.division === "BEGINNER_INTERMEDIATE"),
+    [semis]
+  );
 
   const finalMatches = useMemo(() => {
     return finals.filter((m) => m.phase === "FINAL");
@@ -1133,30 +1160,41 @@ export default function MatchSchedule() {
     }
   }
 
-  async function advanceToSemis() {
+  async function advanceDivisionToSemis(division) {
     setAdvanceSemisError("");
 
     if (!tid) return setAdvanceSemisError("No tournament selected.");
 
-    if (!rrComplete) {
-      const missing = rrIncompleteMatches.map((m) => m.id).join(", ");
+    const isAdv = division === "ADVANCED";
+    const setLoading = isAdv ? setAdvancingAdvSemis : setAdvancingBISemis;
+    const divSemisExist = isAdv ? advSemisExist : biSemisExist;
+    const divRrComplete = isAdv ? advRrComplete : biRrComplete;
+    const divRrIncomplete = (isAdv ? advRrMatches : biRrMatches).filter(
+      (m) => !m.winnerId
+    );
+    const label = isAdv ? "Advanced" : "Beginner / Intermediate";
+
+    if (divSemisExist) {
       setAdvanceSemisError(
-        `Round robin isn't complete yet. Score (or scratch) these matches first: ${missing}`
+        `${label} semifinals already exist. Use Reset Playoffs to regenerate.`
       );
       return;
     }
 
-    if (semisExist) {
+    if (!divRrComplete) {
+      const missing = divRrIncomplete.map((m) => m.id).join(", ");
       setAdvanceSemisError(
-        "Semifinals already exist. Use Reset Playoffs if you want to regenerate."
+        `${label} round robin isn't complete yet. Score these first: ${missing}`
       );
       return;
     }
 
-    setAdvancingSemis(true);
+    setLoading(true);
     try {
       const res = await fetch(withTid("/api/playoffs/generate"), {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -1167,7 +1205,7 @@ export default function MatchSchedule() {
       console.error(e);
       setAdvanceSemisError(e?.message || "Could not generate semifinals.");
     } finally {
-      setAdvancingSemis(false);
+      setLoading(false);
     }
   }
 
@@ -1409,19 +1447,38 @@ export default function MatchSchedule() {
             >
               <Button
                 variant="outline"
-                onClick={advanceToSemis}
+                onClick={() => advanceDivisionToSemis("ADVANCED")}
                 disabled={
                   !tid ||
-                  advancingSemis ||
+                  advancingAdvSemis ||
                   tournamentComplete ||
-                  semisExist ||
-                  !rrComplete
+                  advSemisExist ||
+                  !advRrComplete
                 }
               >
                 <HStack gap={2}>
                   <ChevronsRight size={16} />
                   <Text>
-                    {advancingSemis ? "Advancing…" : "Advance to Semis"}
+                    {advancingAdvSemis ? "Advancing…" : "ADV → Semis"}
+                  </Text>
+                </HStack>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => advanceDivisionToSemis("BEGINNER_INTERMEDIATE")}
+                disabled={
+                  !tid ||
+                  advancingBISemis ||
+                  tournamentComplete ||
+                  biSemisExist ||
+                  !biRrComplete
+                }
+              >
+                <HStack gap={2}>
+                  <ChevronsRight size={16} />
+                  <Text>
+                    {advancingBISemis ? "Advancing…" : "BI → Semis"}
                   </Text>
                 </HStack>
               </Button>

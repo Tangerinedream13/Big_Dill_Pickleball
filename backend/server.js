@@ -676,19 +676,32 @@ app.post("/api/playoffs/generate", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
 
-    const existingSemis = await pool.query(
-      `
-      select code from matches
-      where tournament_id = $1 and phase = 'SF'
-      limit 1;
-      `,
-      [tournamentId],
-    );
-
-    if (existingSemis.rowCount > 0) {
-      return res.status(409).json({
-        error: "Semifinals already exist. Reset playoffs to regenerate.",
+    const requestedDivision = req.body?.division ?? null;
+    if (requestedDivision && !DIVISIONS.includes(requestedDivision)) {
+      return res.status(400).json({
+        error: "Invalid division. Use ADVANCED or BEGINNER_INTERMEDIATE.",
       });
+    }
+
+    const divisionsToGenerate = requestedDivision ? [requestedDivision] : DIVISIONS;
+
+    // Check for existing semis per requested division only
+    for (const div of divisionsToGenerate) {
+      const existing = await pool.query(
+        `
+        select code from matches
+        where tournament_id = $1
+          and phase = 'SF'
+          and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2
+        limit 1;
+        `,
+        [tournamentId, div],
+      );
+      if (existing.rowCount > 0) {
+        return res.status(409).json({
+          error: `${divisionLabel(div)} semifinals already exist. Reset playoffs to regenerate.`,
+        });
+      }
     }
 
     const allTeams = await getTeamsForTournament(tournamentId);
@@ -696,16 +709,20 @@ app.post("/api/playoffs/generate", async (req, res) => {
     const standingsByDivision = {};
     const skippedDivisions = [];
 
-    await pool.query(
-      `
-      delete from matches
-      where tournament_id = $1
-        and phase in ('SF', 'FINAL', 'THIRD');
-      `,
-      [tournamentId],
-    );
+    // Clear only the requested division(s)
+    for (const div of divisionsToGenerate) {
+      await pool.query(
+        `
+        delete from matches
+        where tournament_id = $1
+          and phase in ('SF', 'FINAL', 'THIRD')
+          and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;
+        `,
+        [tournamentId, div],
+      );
+    }
 
-    for (const division of DIVISIONS) {
+    for (const division of divisionsToGenerate) {
       const divisionTeams = await getTeamsForTournament(tournamentId, division);
       const rrMatches = await getMatchesForTournamentByPhase(
         tournamentId,

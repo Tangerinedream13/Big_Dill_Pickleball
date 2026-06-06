@@ -1416,6 +1416,13 @@ app.post("/api/roundrobin/generate", async (req, res) => {
     const tournamentId = await resolveTournamentId(req);
     const allTeams = await getTeamsForTournament(tournamentId);
 
+    const requestedDivision = req.body?.division ?? null;
+    if (requestedDivision && !DIVISIONS.includes(requestedDivision)) {
+      return res.status(400).json({
+        error: "Invalid division. Use ADVANCED or BEGINNER_INTERMEDIATE.",
+      });
+    }
+
     const teamsByDivision = {};
     for (const division of DIVISIONS) {
       teamsByDivision[division] = allTeams.filter(
@@ -1423,7 +1430,9 @@ app.post("/api/roundrobin/generate", async (req, res) => {
       );
     }
 
-    const playableDivisions = DIVISIONS.filter(
+    const candidateDivisions = requestedDivision ? [requestedDivision] : DIVISIONS;
+
+    const playableDivisions = candidateDivisions.filter(
       (division) => teamsByDivision[division].length >= 3,
     );
 
@@ -1491,14 +1500,18 @@ app.post("/api/roundrobin/generate", async (req, res) => {
       rrMatches.push(...spreadMatches);
     }
 
-    await pool.query(
-      `delete from matches where tournament_id = $1 and phase = 'RR';`,
-      [tournamentId],
-    );
-    await pool.query(
-      `delete from matches where tournament_id = $1 and phase in ('SF','FINAL','THIRD');`,
-      [tournamentId],
-    );
+    for (const div of playableDivisions) {
+      await pool.query(
+        `delete from matches where tournament_id = $1 and phase = 'RR'
+         and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;`,
+        [tournamentId, div],
+      );
+      await pool.query(
+        `delete from matches where tournament_id = $1 and phase in ('SF','FINAL','THIRD')
+         and coalesce(division, 'BEGINNER_INTERMEDIATE') = $2;`,
+        [tournamentId, div],
+      );
+    }
 
     let scheduled = rrMatches.map((m) => ({
       ...m,

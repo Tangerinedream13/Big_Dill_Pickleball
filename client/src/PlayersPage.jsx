@@ -792,16 +792,11 @@ export default function PlayersPage() {
     }
   }
 
-  async function generateMatches() {
+  async function generateMatchesForDivision(division) {
     setGenerateError("");
 
     if (!tid) {
       setGenerateError("No tournament selected.");
-      setGenerateStatus("error");
-      return;
-    }
-    if (teams.length < 2) {
-      setGenerateError("Create at least 2 teams first.");
       setGenerateStatus("error");
       return;
     }
@@ -812,7 +807,7 @@ export default function PlayersPage() {
       const res = await fetch(withTid("/api/roundrobin/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gamesPerTeam: 4 }),
+        body: JSON.stringify({ gamesPerTeam: 4, division }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -1245,15 +1240,26 @@ export default function PlayersPage() {
 
                   <Button
                     variant="outline"
-                    onClick={generateMatches}
-                    disabled={!tid || generateStatus === "saving"}
+                    onClick={() => generateMatchesForDivision("ADVANCED")}
+                    disabled={!tid || generateStatus === "saving" || advancedTeams.length < 3}
                   >
                     <HStack gap={2}>
                       <CalendarDays size={16} />
                       <Text>
-                        {generateStatus === "saving"
-                          ? "Generating…"
-                          : "Generate Matches"}
+                        {generateStatus === "saving" ? "Generating…" : "Generate ADV Matches"}
+                      </Text>
+                    </HStack>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => generateMatchesForDivision("BEGINNER_INTERMEDIATE")}
+                    disabled={!tid || generateStatus === "saving" || beginnerIntermediateTeams.length < 3}
+                  >
+                    <HStack gap={2}>
+                      <CalendarDays size={16} />
+                      <Text>
+                        {generateStatus === "saving" ? "Generating…" : "Generate BI Matches"}
                       </Text>
                     </HStack>
                   </Button>

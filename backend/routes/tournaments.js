@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const { requireAuth, requireRole } = require("../middleware/auth");
 
 function errToMessage(err) {
   if (!err) return "Unknown error";
@@ -193,7 +194,7 @@ router.get("/:id/public-info", async (req, res) => {
 });
 
 // PATCH /api/tournaments/:id/info
-router.patch("/:id/info", async (req, res) => {
+router.patch("/:id/info", requireAuth, requireRole("admin"), async (req, res) => {
   const tournamentId = parseId(req.params.id);
   if (!tournamentId) {
     return res.status(400).json({ error: "Invalid tournament id." });

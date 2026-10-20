@@ -1,5 +1,5 @@
 import { API_BASE } from "./apiBase";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -351,7 +351,7 @@ function MatchesCardList({
   editMode,
   tid,
   tournamentComplete,
-  finalsConfirmed,
+  isLockedByFinals,
   labelForPhase,
   displayTeamForMatch,
   winnerText,
@@ -381,8 +381,7 @@ function MatchesCardList({
         const forfeited = isForfeitRR(m);
         const isEditingThis = !!editMode[m.id];
 
-        const isFinalsMatch = m.phase === "FINAL" || m.phase === "THIRD";
-        const lockedByFinals = finalsConfirmed && !isFinalsMatch;
+        const lockedByFinals = isLockedByFinals(m);
 
         const locked =
           tournamentComplete ||
@@ -397,7 +396,7 @@ function MatchesCardList({
           !isEditingThis;
 
         const showScratch =
-          m.phase === "RR" && !tournamentComplete && !finalsConfirmed;
+          m.phase === "RR" && !tournamentComplete && !lockedByFinals;
 
         const hasTypedSomething =
           (row.scoreA ?? "") !== "" || (row.scoreB ?? "") !== "";
@@ -822,9 +821,21 @@ export default function MatchSchedule() {
     });
   }, [placementMatches, advRrMatches, biRrMatches]);
 
-  const finalsConfirmed = useMemo(() => {
-    return placementMatches.some((m) => !!m.winnerId);
+  // Divisions whose Final/Third has a winner. Once a division's finals are
+  // scored, that division's earlier matches lock — other divisions are unaffected.
+  const finalsConfirmedDivisions = useMemo(() => {
+    return new Set(
+      placementMatches.filter((m) => !!m.winnerId).map((m) => m.division)
+    );
   }, [placementMatches]);
+
+  const isLockedByFinals = useCallback(
+    (m) =>
+      m.phase !== "FINAL" &&
+      m.phase !== "THIRD" &&
+      finalsConfirmedDivisions.has(m.division),
+    [finalsConfirmedDivisions]
+  );
 
   const championNames = useMemo(() => {
     return finalMatches
@@ -885,10 +896,9 @@ export default function MatchSchedule() {
       return;
     }
 
-    const isFinalsMatch = match.phase === "FINAL" || match.phase === "THIRD";
-    if (finalsConfirmed && !isFinalsMatch) {
+    if (isLockedByFinals(match)) {
       alert(
-        "Editing locked: Finals have been confirmed. Earlier matches can’t be edited."
+        "Editing locked: Finals have been confirmed for this division. Earlier matches can’t be edited."
       );
       return;
     }
@@ -969,13 +979,13 @@ export default function MatchSchedule() {
       return;
     }
 
-    const isFinalsMatch = match.phase === "FINAL" || match.phase === "THIRD";
-    if (finalsConfirmed && !isFinalsMatch) {
+    if (isLockedByFinals(match)) {
       setEdits((prev) => ({
         ...prev,
         [matchId]: {
           ...prev[matchId],
-          error: "Finals have been confirmed. Earlier matches can’t be edited.",
+          error:
+            "Finals have been confirmed for this division. Earlier matches can’t be edited.",
         },
       }));
       return;
@@ -1313,9 +1323,9 @@ export default function MatchSchedule() {
   function openScratch(m) {
     if (tournamentComplete) return;
 
-    if (finalsConfirmed) {
+    if (isLockedByFinals(m)) {
       alert(
-        "Scratch locked: Finals have been confirmed. Earlier matches can’t be changed."
+        "Scratch locked: Finals have been confirmed for this division. Earlier matches can’t be changed."
       );
       return;
     }
@@ -1990,7 +2000,7 @@ export default function MatchSchedule() {
                   editMode={editMode}
                   tid={tid}
                   tournamentComplete={tournamentComplete}
-                  finalsConfirmed={finalsConfirmed}
+                  isLockedByFinals={isLockedByFinals}
                   labelForPhase={labelForPhase}
                   displayTeamForMatch={displayTeamForMatch}
                   winnerText={winnerText}
@@ -2037,10 +2047,7 @@ export default function MatchSchedule() {
                         const forfeited = isForfeitRR(m);
                         const isEditingThis = !!editMode[m.id];
 
-                        const isFinalsMatch =
-                          m.phase === "FINAL" || m.phase === "THIRD";
-                        const lockedByFinals =
-                          finalsConfirmed && !isFinalsMatch;
+                        const lockedByFinals = isLockedByFinals(m);
 
                         const locked =
                           tournamentComplete ||
@@ -2057,7 +2064,7 @@ export default function MatchSchedule() {
                         const showScratch =
                           m.phase === "RR" &&
                           !tournamentComplete &&
-                          !finalsConfirmed;
+                          !lockedByFinals;
 
                         const hasTypedSomething =
                           (row.scoreA ?? "") !== "" ||

@@ -795,6 +795,19 @@ export default function MatchSchedule() {
     [semis]
   );
 
+  const advPlayoffsExist = useMemo(
+    () =>
+      [...semis, ...finals].some((m) => m.division === "ADVANCED"),
+    [semis, finals]
+  );
+  const biPlayoffsExist = useMemo(
+    () =>
+      [...semis, ...finals].some(
+        (m) => m.division === "BEGINNER_INTERMEDIATE"
+      ),
+    [semis, finals]
+  );
+
   const finalMatches = useMemo(() => {
     return finals.filter((m) => m.phase === "FINAL");
   }, [finals]);
@@ -1139,14 +1152,17 @@ export default function MatchSchedule() {
     }
   }
 
-  async function resetPlayoffs() {
+  async function resetPlayoffs(division) {
     setResetPlayoffsError("");
 
     if (!tid) return setResetPlayoffsError("No tournament selected.");
 
+    const label =
+      division === "ADVANCED" ? "Advanced" : "Beginner / Intermediate";
+
     if (
       !confirm(
-        "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
+        `Reset ${label} playoffs only? (${label} Semis/Final/Third will be cleared. Round robin and the other division stay.)`
       )
     )
       return;
@@ -1155,13 +1171,15 @@ export default function MatchSchedule() {
     try {
       const res = await fetch(withTid("/api/playoffs/reset"), {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (typeof data?.deleted === "number") {
         if (data.deleted > 0) {
-          setSavedMsg(`Playoffs reset ✅ (${data.deleted} deleted)`);
+          setSavedMsg(`${label} playoffs reset ✅ (${data.deleted} deleted)`);
         } else {
           setSavedMsg(data?.message || "No playoffs to reset.");
         }
@@ -1194,7 +1212,7 @@ export default function MatchSchedule() {
 
     if (divSemisExist) {
       setAdvanceSemisError(
-        `${label} semifinals already exist. Use Reset Playoffs to regenerate.`
+        `${label} semifinals already exist. Use Reset ${isAdv ? "ADV" : "BI"} Playoffs to regenerate.`
       );
       return;
     }
@@ -1518,18 +1536,36 @@ export default function MatchSchedule() {
 
               <Button
                 variant="outline"
-                onClick={resetPlayoffs}
+                onClick={() => resetPlayoffs("ADVANCED")}
                 disabled={
                   !tid ||
                   resettingPlayoffs ||
                   tournamentComplete ||
-                  (!semisExist && !finalsExist)
+                  !advPlayoffsExist
                 }
               >
                 <HStack gap={2}>
                   <Eraser size={16} />
                   <Text>
-                    {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+                    {resettingPlayoffs ? "Resetting…" : "Reset ADV Playoffs"}
+                  </Text>
+                </HStack>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => resetPlayoffs("BEGINNER_INTERMEDIATE")}
+                disabled={
+                  !tid ||
+                  resettingPlayoffs ||
+                  tournamentComplete ||
+                  !biPlayoffsExist
+                }
+              >
+                <HStack gap={2}>
+                  <Eraser size={16} />
+                  <Text>
+                    {resettingPlayoffs ? "Resetting…" : "Reset BI Playoffs"}
                   </Text>
                 </HStack>
               </Button>

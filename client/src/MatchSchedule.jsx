@@ -1,5 +1,5 @@
 import { API_BASE } from "./apiBase";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Badge,
@@ -351,7 +351,7 @@ function MatchesCardList({
   editMode,
   tid,
   tournamentComplete,
-  finalsConfirmed,
+  isLockedByFinals,
   labelForPhase,
   displayTeamForMatch,
   winnerText,
@@ -381,8 +381,7 @@ function MatchesCardList({
         const forfeited = isForfeitRR(m);
         const isEditingThis = !!editMode[m.id];
 
-        const isFinalsMatch = m.phase === "FINAL" || m.phase === "THIRD";
-        const lockedByFinals = finalsConfirmed && !isFinalsMatch;
+        const lockedByFinals = isLockedByFinals(m);
 
         const locked =
           tournamentComplete ||
@@ -397,7 +396,7 @@ function MatchesCardList({
           !isEditingThis;
 
         const showScratch =
-          m.phase === "RR" && !tournamentComplete && !finalsConfirmed;
+          m.phase === "RR" && !tournamentComplete && !lockedByFinals;
 
         const hasTypedSomething =
           (row.scoreA ?? "") !== "" || (row.scoreB ?? "") !== "";
@@ -796,6 +795,19 @@ export default function MatchSchedule() {
     [semis]
   );
 
+  const advPlayoffsExist = useMemo(
+    () =>
+      [...semis, ...finals].some((m) => m.division === "ADVANCED"),
+    [semis, finals]
+  );
+  const biPlayoffsExist = useMemo(
+    () =>
+      [...semis, ...finals].some(
+        (m) => m.division === "BEGINNER_INTERMEDIATE"
+      ),
+    [semis, finals]
+  );
+
   const finalMatches = useMemo(() => {
     return finals.filter((m) => m.phase === "FINAL");
   }, [finals]);
@@ -822,9 +834,21 @@ export default function MatchSchedule() {
     });
   }, [placementMatches, advRrMatches, biRrMatches]);
 
-  const finalsConfirmed = useMemo(() => {
-    return placementMatches.some((m) => !!m.winnerId);
+  // Divisions whose Final/Third has a winner. Once a division's finals are
+  // scored, that division's earlier matches lock — other divisions are unaffected.
+  const finalsConfirmedDivisions = useMemo(() => {
+    return new Set(
+      placementMatches.filter((m) => !!m.winnerId).map((m) => m.division)
+    );
   }, [placementMatches]);
+
+  const isLockedByFinals = useCallback(
+    (m) =>
+      m.phase !== "FINAL" &&
+      m.phase !== "THIRD" &&
+      finalsConfirmedDivisions.has(m.division),
+    [finalsConfirmedDivisions]
+  );
 
   const championNames = useMemo(() => {
     return finalMatches
@@ -885,10 +909,9 @@ export default function MatchSchedule() {
       return;
     }
 
-    const isFinalsMatch = match.phase === "FINAL" || match.phase === "THIRD";
-    if (finalsConfirmed && !isFinalsMatch) {
+    if (isLockedByFinals(match)) {
       alert(
-        "Editing locked: Finals have been confirmed. Earlier matches can’t be edited."
+        "Editing locked: Finals have been confirmed for this division. Earlier matches can’t be edited."
       );
       return;
     }
@@ -969,13 +992,13 @@ export default function MatchSchedule() {
       return;
     }
 
-    const isFinalsMatch = match.phase === "FINAL" || match.phase === "THIRD";
-    if (finalsConfirmed && !isFinalsMatch) {
+    if (isLockedByFinals(match)) {
       setEdits((prev) => ({
         ...prev,
         [matchId]: {
           ...prev[matchId],
-          error: "Finals have been confirmed. Earlier matches can’t be edited.",
+          error:
+            "Finals have been confirmed for this division. Earlier matches can’t be edited.",
         },
       }));
       return;
@@ -1129,14 +1152,17 @@ export default function MatchSchedule() {
     }
   }
 
-  async function resetPlayoffs() {
+  async function resetPlayoffs(division) {
     setResetPlayoffsError("");
 
     if (!tid) return setResetPlayoffsError("No tournament selected.");
 
+    const label =
+      division === "ADVANCED" ? "Advanced" : "Beginner / Intermediate";
+
     if (
       !confirm(
-        "Reset playoffs only? (Semis/Final/Third will be cleared, RR stays.)"
+        `Reset ${label} playoffs only? (${label} Semis/Final/Third will be cleared. Round robin and the other division stay.)`
       )
     )
       return;
@@ -1145,13 +1171,15 @@ export default function MatchSchedule() {
     try {
       const res = await fetch(withTid("/api/playoffs/reset"), {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (typeof data?.deleted === "number") {
         if (data.deleted > 0) {
-          setSavedMsg(`Playoffs reset ✅ (${data.deleted} deleted)`);
+          setSavedMsg(`${label} playoffs reset ✅ (${data.deleted} deleted)`);
         } else {
           setSavedMsg(data?.message || "No playoffs to reset.");
         }
@@ -1184,7 +1212,7 @@ export default function MatchSchedule() {
 
     if (divSemisExist) {
       setAdvanceSemisError(
-        `${label} semifinals already exist. Use Reset Playoffs to regenerate.`
+        `${label} semifinals already exist. Use Reset ${isAdv ? "ADV" : "BI"} Playoffs to regenerate.`
       );
       return;
     }
@@ -1313,9 +1341,9 @@ export default function MatchSchedule() {
   function openScratch(m) {
     if (tournamentComplete) return;
 
-    if (finalsConfirmed) {
+    if (isLockedByFinals(m)) {
       alert(
-        "Scratch locked: Finals have been confirmed. Earlier matches can’t be changed."
+        "Scratch locked: Finals have been confirmed for this division. Earlier matches can’t be changed."
       );
       return;
     }
@@ -1508,18 +1536,36 @@ export default function MatchSchedule() {
 
               <Button
                 variant="outline"
-                onClick={resetPlayoffs}
+                onClick={() => resetPlayoffs("ADVANCED")}
                 disabled={
                   !tid ||
                   resettingPlayoffs ||
                   tournamentComplete ||
-                  (!semisExist && !finalsExist)
+                  !advPlayoffsExist
                 }
               >
                 <HStack gap={2}>
                   <Eraser size={16} />
                   <Text>
-                    {resettingPlayoffs ? "Resetting…" : "Reset Playoffs"}
+                    {resettingPlayoffs ? "Resetting…" : "Reset ADV Playoffs"}
+                  </Text>
+                </HStack>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => resetPlayoffs("BEGINNER_INTERMEDIATE")}
+                disabled={
+                  !tid ||
+                  resettingPlayoffs ||
+                  tournamentComplete ||
+                  !biPlayoffsExist
+                }
+              >
+                <HStack gap={2}>
+                  <Eraser size={16} />
+                  <Text>
+                    {resettingPlayoffs ? "Resetting…" : "Reset BI Playoffs"}
                   </Text>
                 </HStack>
               </Button>
@@ -1990,7 +2036,7 @@ export default function MatchSchedule() {
                   editMode={editMode}
                   tid={tid}
                   tournamentComplete={tournamentComplete}
-                  finalsConfirmed={finalsConfirmed}
+                  isLockedByFinals={isLockedByFinals}
                   labelForPhase={labelForPhase}
                   displayTeamForMatch={displayTeamForMatch}
                   winnerText={winnerText}
@@ -2037,10 +2083,7 @@ export default function MatchSchedule() {
                         const forfeited = isForfeitRR(m);
                         const isEditingThis = !!editMode[m.id];
 
-                        const isFinalsMatch =
-                          m.phase === "FINAL" || m.phase === "THIRD";
-                        const lockedByFinals =
-                          finalsConfirmed && !isFinalsMatch;
+                        const lockedByFinals = isLockedByFinals(m);
 
                         const locked =
                           tournamentComplete ||
@@ -2057,7 +2100,7 @@ export default function MatchSchedule() {
                         const showScratch =
                           m.phase === "RR" &&
                           !tournamentComplete &&
-                          !finalsConfirmed;
+                          !lockedByFinals;
 
                         const hasTypedSomething =
                           (row.scoreA ?? "") !== "" ||

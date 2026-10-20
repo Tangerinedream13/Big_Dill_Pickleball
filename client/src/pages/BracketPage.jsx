@@ -21,6 +21,8 @@ import { ArrowLeft, Home, Printer, RotateCcw } from "lucide-react";
 import { getCurrentTournamentId } from "../tournamentStore";
 import { API_BASE } from "../apiBase";
 import usePageTitle from "../hooks/usePageTitle";
+import ChampionBanner from "../components/ChampionBanner";
+import { buildChampionResults } from "../components/championResults";
 
 /**
  * Important: this file guards against “Objects are not valid as a React child”
@@ -334,6 +336,8 @@ export default function BracketPage() {
     return winners.join(", ");
   }, [matchesByDivision, seedByTeamId, teams]);
 
+  const championResults = buildChampionResults(finals, seededTeamLabel);
+
   const tournamentComplete = useMemo(() => {
     const groupsWithFinals = matchesByDivision.filter(
       (group) => group.finalMatch || group.thirdMatch
@@ -567,6 +571,10 @@ export default function BracketPage() {
           </Button>
         </HStack>
       </HStack>
+
+      <Box mb={championResults.length ? 6 : 0} className="no-print">
+        <ChampionBanner results={championResults} />
+      </Box>
 
       {error && (
         <Box mb={4} p={3} borderWidth="1px" rounded="md">

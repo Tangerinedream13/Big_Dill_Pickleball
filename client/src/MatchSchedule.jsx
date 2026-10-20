@@ -30,7 +30,6 @@ import {
   RotateCcw,
   Eraser,
   ChevronsRight,
-  Trophy,
   Flag,
   X,
   Play,
@@ -38,6 +37,8 @@ import {
 } from "lucide-react";
 import { getCurrentTournamentId } from "./tournamentStore";
 import StickyPageHeader from "./components/StickyPageHeader";
+import ChampionBanner from "./components/ChampionBanner";
+import { buildChampionResults } from "./components/championResults";
 import usePageTitle from "./hooks/usePageTitle";
 
 /* -----------------------------
@@ -850,13 +851,10 @@ export default function MatchSchedule() {
     [finalsConfirmedDivisions]
   );
 
-  const championNames = useMemo(() => {
-    return finalMatches
-      .filter((m) => !!m.winnerId)
-      .map((m) => teamDisplay(m.winnerId));
-  }, [finalMatches, teamDisplay]);
-
-  const championName = championNames.join(", ");
+  const championResults = useMemo(
+    () => buildChampionResults(finals, teamDisplay),
+    [finals, teamDisplay]
+  );
 
   const tournamentInProgress = useMemo(() => {
     const count = rrMatches.length + semis.length + finals.length;
@@ -1583,30 +1581,14 @@ export default function MatchSchedule() {
             </HStack>
           </Flex>
 
-          {tournamentComplete ? (
-            <Box
-              border="1px solid"
-              borderColor="green.200"
-              bg="green.50"
-              p={3}
-              borderRadius="lg"
-            >
-              <HStack justify="space-between" wrap="wrap" gap={2}>
-                <HStack gap={2}>
-                  <Trophy size={18} />
-                  <Text fontWeight="800">
-                    Tournament Complete{championName ? ": Winners" : ""}
-                  </Text>
-                  {championName ? (
-                    <Text fontWeight="700">{championName}</Text>
-                  ) : null}
-                </HStack>
-                <Text fontSize="sm" opacity={0.75}>
-                  Scores are locked.
-                </Text>
-              </HStack>
-            </Box>
-          ) : null}
+          <ChampionBanner
+            results={championResults}
+            note={
+              tournamentComplete
+                ? "Tournament complete. Scores are locked."
+                : null
+            }
+          />
         </Stack>
       </StickyPageHeader>
 

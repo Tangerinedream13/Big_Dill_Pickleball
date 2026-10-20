@@ -645,13 +645,22 @@ app.post("/api/playoffs/reset", async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req);
 
+    // Optional: reset only one division's playoffs
+    const division = req.body?.division ?? null;
+    if (division && !DIVISIONS.includes(division)) {
+      return res.status(400).json({
+        error: "Invalid division. Use ADVANCED or BEGINNER_INTERMEDIATE.",
+      });
+    }
+
     const result = await pool.query(
       `
       delete from matches
       where tournament_id = $1
-        and phase in ('SF', 'FINAL', 'THIRD');
+        and phase in ('SF', 'FINAL', 'THIRD')
+        and ($2::text is null or coalesce(division, 'BEGINNER_INTERMEDIATE') = $2);
       `,
-      [tournamentId],
+      [tournamentId, division],
     );
 
     const deleted = result.rowCount || 0;
